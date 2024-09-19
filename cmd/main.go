@@ -2,20 +2,21 @@ package main
 
 import (
 	"TeeTimeFinder/pkg/scraper"
-	"flag"
 	"fmt"
-	"log"
 )
 
 func main() {
 	fmt.Println("Starting Golf Scraper...")
-
-	url := flag.String("url", "", "URL of the golf booking site")
-	flag.Parse()
-
-	if *url == "" {
-		log.Fatal("Please provide the URL using -url flag")
+	// URLs to scrape
+	urls := []string{
+		"https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?bookingResourceId=3000000&selectedDate=2024-09-19&weekends=false",
+		"https://pointwalter.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000",
+		"https://bookings.collierparkgolf.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000",
 	}
 
-	scraper.Scrape(*url)
+	// Iterate over the URLs and call the Scrape function
+	for _, url := range urls {
+		fmt.Printf("Scraping URL: %s\n", url)
+		scraper.Scrape(url)
+	}
 }
