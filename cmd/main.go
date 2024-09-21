@@ -54,26 +54,26 @@ func main() {
 
 	// Categorise games
 	var standardGames, promoGames []string
-	gameToURLs := make(map[string][]string)
+	gameToTimeslotURLs := make(map[string][]string)
 
 	// Iterate over the URLs and call the Scrape function
 	for _, url := range urls {
 		fmt.Printf("Scraping URL: %s\n", url)
-		rowNames, err := scraper.Scrape(url, dateIndex)
+		gameTimeslotURLs, err := scraper.Scrape(url, dateIndex)
 		if err != nil {
 			fmt.Printf("Failed to scrape %s: %v\n", url, err)
 			continue
 		}
 
 		// Categorise row names
-		for _, name := range rowNames {
+		for name, timeslotURL := range gameTimeslotURLs {
 			normalisedName := strings.TrimSpace(name)
 
 			// Group all Twilight variations under "Twilight"
 			if strings.Contains(strings.ToLower(normalisedName), "twilight") {
 				normalisedName = "Twilight" // Normalise all "Twilight" variations to "Twilight"
 			}
-			
+
 			fmt.Printf("Found available game: '%s'\n", normalisedName)
 
 			// Categorise games
@@ -83,8 +83,8 @@ func main() {
 				promoGames = append(promoGames, normalisedName)
 			}
 
-			// Track the URLs for each game
-			gameToURLs[normalisedName] = append(gameToURLs[normalisedName], url)
+			// Track the timeslot URLs for each game
+			gameToTimeslotURLs[normalisedName] = append(gameToTimeslotURLs[normalisedName], timeslotURL)
 		}
 	}
 
@@ -141,12 +141,13 @@ func main() {
 		selectedGame = promoGames[choice-1]
 	}
 
-	// Get the URLs offering this game
-	urlsOfferingGame := gameToURLs[selectedGame]
+	// Get the timeslot URLs offering this game
+	urlsOfferingGame := gameToTimeslotURLs[selectedGame]
 	fmt.Printf("You selected: %s\n", selectedGame)
-	fmt.Println("The following courses offer this game:")
-	for _, url := range urlsOfferingGame {
-		fmt.Println(url)
+
+	fmt.Println("The following timeslot URLs offer this game:")
+	for _, timeslotURL := range urlsOfferingGame {
+		fmt.Println(timeslotURL)  // Print the timeslot URLs
 	}
 }
 
