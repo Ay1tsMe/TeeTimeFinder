@@ -14,7 +14,7 @@ func main() {
 	fmt.Println("Starting Golf Scraper...")
 	// URLs to scrape
 	urls := []string{
-		"https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?bookingResourceId=3000000&selectedDate=2024-09-19&weekends=false",
+		"https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000",
 		"https://pointwalter.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000",
 		"https://bookings.collierparkgolf.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000",
 	}
@@ -52,46 +52,61 @@ func main() {
 		return
 	}
 
-	// Create a map to store unique row names
-	rowNameSet := make(map[string]struct{})
-	rowNameToURLs := make(map[string][]string)
+	// Categorize games
+	var standardGames, promoGames []string
+	gameToURLs := make(map[string][]string)
 
 	// Iterate over the URLs and call the Scrape function
 	for _, url := range urls {
-
 		fmt.Printf("Scraping URL: %s\n", url)
 		rowNames, err := scraper.Scrape(url, dateIndex)
-
 		if err != nil {
 			fmt.Printf("Failed to scrape %s: %v\n", url, err)
 			continue
 		}
 
+		// Categorize row names
 		for _, name := range rowNames {
-			// Normalise the name to combine like rows (e.g., trim spaces)
 			normalisedName := strings.TrimSpace(name)
 			fmt.Printf("Found available game: '%s'\n", normalisedName)
-			rowNameSet[normalisedName] = struct{}{}
-			rowNameToURLs[normalisedName] = append(rowNameToURLs[normalisedName], url)
+
+			// Categorize games
+			if isStandardGame(normalisedName) {
+				standardGames = append(standardGames, normalisedName)
+			} else {
+				promoGames = append(promoGames, normalisedName)
+			}
+
+			// Track the URLs for each game
+			gameToURLs[normalisedName] = append(gameToURLs[normalisedName], url)
 		}
 	}
 
-	// Collect the unique row names into a slice
-	var uniqueRowNames []string
-	for name := range rowNameSet {
-		fmt.Printf("Adding '%s' to unique row names\n", name)
-		uniqueRowNames = append(uniqueRowNames, name)
-	}
-
-	if len(uniqueRowNames) == 0 {
+	// Check if there are any available games
+	if len(standardGames) == 0 && len(promoGames) == 0 {
 		fmt.Println("No available games found on the selected date.")
 		return
 	}
 
-	// Now, present the options to the user
-	fmt.Println("Select what game you want to play:")
-	for i, name := range uniqueRowNames {
-		fmt.Printf("%d. %s\n", i+1, name)
+	// Display standard games and promo option
+	var gameOptions []string
+
+	fmt.Println("\nSelect what game you want to play:")
+	for i, game := range uniqueNames(standardGames) {
+		fmt.Printf("%d. %s\n", i+1, game)
+		gameOptions = append(gameOptions, game)
+	}
+
+	// Add "Promos" option
+	if len(promoGames) > 0 {
+		fmt.Printf("%d. Promos\n", len(gameOptions)+1)
+		gameOptions = append(gameOptions, "Promos")
+	}
+
+	// Check if there are no game options
+	if len(gameOptions) == 0 {
+		fmt.Println("No available games to select.")
+		return
 	}
 
 	// Read user input
@@ -99,16 +114,30 @@ func main() {
 	fmt.Print("Enter the number of your choice: ")
 	fmt.Scanln(&choice)
 
-	if choice < 1 || choice > len(uniqueRowNames) {
+	if choice < 1 || choice > len(gameOptions) {
 		fmt.Println("Invalid choice")
 		return
 	}
 
-	selectedGame := uniqueRowNames[choice-1]
-	fmt.Printf("You selected: %s\n", selectedGame)
+	selectedGame := gameOptions[choice-1]
+	if selectedGame == "Promos" {
+		// If "Promos" is selected, display promo games
+		fmt.Println("\nSelect a promotional game:")
+		for i, promo := range uniqueNames(promoGames) {
+			fmt.Printf("%d. %s\n", i+1, promo)
+		}
+		fmt.Print("Enter the number of your choice: ")
+		fmt.Scanln(&choice)
+		if choice < 1 || choice > len(promoGames) {
+			fmt.Println("Invalid choice")
+			return
+		}
+		selectedGame = promoGames[choice-1]
+	}
 
 	// Get the URLs offering this game
-	urlsOfferingGame := rowNameToURLs[selectedGame]
+	urlsOfferingGame := gameToURLs[selectedGame]
+	fmt.Printf("You selected: %s\n", selectedGame)
 	fmt.Println("The following courses offer this game:")
 	for _, url := range urlsOfferingGame {
 		fmt.Println(url)
@@ -130,4 +159,23 @@ func parseDayMonth(dateStr string) (int, int, error) {
 		return 0, 0, err
 	}
 	return day, month, nil
+}
+
+// Helper function to check if a game is a standard game
+func isStandardGame(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name)) // Trim spaces and convert to lowercase
+	return name == "9 holes" || name == "18 holes" || name == "twilight"
+}
+
+// Helper function to get unique values from a slice
+func uniqueNames(items []string) []string {
+	keys := make(map[string]bool)
+	list := []string{}
+	for _, entry := range items {
+		if _, value := keys[entry]; !value {
+			keys[entry] = true
+			list = append(list, entry)
+		}
+	}
+	return list
 }
