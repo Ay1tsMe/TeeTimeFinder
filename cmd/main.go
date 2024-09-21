@@ -73,6 +73,14 @@ func main() {
 			if strings.Contains(strings.ToLower(normalisedName), "twilight") {
 				normalisedName = "Twilight" // Normalise all "Twilight" variations to "Twilight"
 			}
+			// Group all public holiday variations 
+			if strings.Contains(strings.ToLower(normalisedName), "public holiday") {
+				if strings.Contains(strings.ToLower(normalisedName), "18 holes") {
+					normalisedName = "18 Holes"
+				} else if strings.Contains(strings.ToLower(normalisedName), "9 holes") {
+					normalisedName = "9 Holes"
+				}
+			}
 
 			fmt.Printf("Found available game: '%s'\n", normalisedName)
 
