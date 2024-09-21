@@ -52,7 +52,7 @@ func main() {
 		return
 	}
 
-	// Categorize games
+	// Categorise games
 	var standardGames, promoGames []string
 	gameToURLs := make(map[string][]string)
 
@@ -65,12 +65,18 @@ func main() {
 			continue
 		}
 
-		// Categorize row names
+		// Categorise row names
 		for _, name := range rowNames {
 			normalisedName := strings.TrimSpace(name)
+
+			// Group all Twilight variations under "Twilight"
+			if strings.Contains(strings.ToLower(normalisedName), "twilight") {
+				normalisedName = "Twilight" // Normalise all "Twilight" variations to "Twilight"
+			}
+			
 			fmt.Printf("Found available game: '%s'\n", normalisedName)
 
-			// Categorize games
+			// Categorise games
 			if isStandardGame(normalisedName) {
 				standardGames = append(standardGames, normalisedName)
 			} else {
