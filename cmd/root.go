@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"TeeTimeFinder/pkg/scraper"
@@ -8,9 +8,42 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
-func main() {
+// rootCmd represents the base command when called without any subcommands
+var rootCmd = &cobra.Command{
+	Use:   "TeeTimeFinder",
+	Short: "A CLI tool for finding golf tee times",
+	Long:  `TeeTimeFinder is a CLI tool that allows you to find and book tee times for various golf courses.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		runScraper() // Run the scraper logic when no subcommands are provided
+	},
+}
+
+// Execute adds all child commands to the root command and sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the rootCmd.
+func Execute() {
+	err := rootCmd.Execute()
+	if err != nil {
+		os.Exit(1)
+	}
+}
+
+func init() {
+	// Here you will define your flags and configuration settings.
+	// Cobra supports persistent flags, which, if defined here,
+	// will be global for your application.
+
+	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.TeeTimeFinder.yaml)")
+
+	// Cobra also supports local flags, which will only run
+	// when this action is called directly.
+	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+}
+
+func runScraper() {
 	fmt.Println("Starting Golf Scraper...")
 	// URLs to scrape
 	urls := []string{
@@ -73,7 +106,7 @@ func main() {
 			if strings.Contains(strings.ToLower(normalisedName), "twilight") {
 				normalisedName = "Twilight" // Normalise all "Twilight" variations to "Twilight"
 			}
-			// Group all public holiday variations 
+			// Group all public holiday variations
 			if strings.Contains(strings.ToLower(normalisedName), "public holiday") {
 				if strings.Contains(strings.ToLower(normalisedName), "18 holes") {
 					normalisedName = "18 Holes"
@@ -102,61 +135,83 @@ func main() {
 		return
 	}
 
-	// Display standard games and promo option
-	var gameOptions []string
+	for {
 
-	fmt.Println("\nSelect what game you want to play:")
-	for i, game := range uniqueNames(standardGames) {
-		fmt.Printf("%d. %s\n", i+1, game)
-		gameOptions = append(gameOptions, game)
-	}
+		// Display standard games and promo option
+		var gameOptions []string
 
-	// Add "Promos" option
-	if len(promoGames) > 0 {
-		fmt.Printf("%d. Promos\n", len(gameOptions)+1)
-		gameOptions = append(gameOptions, "Promos")
-	}
-
-	// Check if there are no game options
-	if len(gameOptions) == 0 {
-		fmt.Println("No available games to select.")
-		return
-	}
-
-	// Read user input
-	var choice int
-	fmt.Print("Enter the number of your choice: ")
-	fmt.Scanln(&choice)
-
-	if choice < 1 || choice > len(gameOptions) {
-		fmt.Println("Invalid choice")
-		return
-	}
-
-	selectedGame := gameOptions[choice-1]
-	if selectedGame == "Promos" {
-		// If "Promos" is selected, display promo games
-		fmt.Println("\nSelect a promotional game:")
-		for i, promo := range uniqueNames(promoGames) {
-			fmt.Printf("%d. %s\n", i+1, promo)
+		fmt.Println("\nSelect what game you want to play:")
+		for i, game := range uniqueNames(standardGames) {
+			fmt.Printf("%d. %s\n", i+1, game)
+			gameOptions = append(gameOptions, game)
 		}
-		fmt.Print("Enter the number of your choice: ")
-		fmt.Scanln(&choice)
-		if choice < 1 || choice > len(promoGames) {
-			fmt.Println("Invalid choice")
+
+		// Add "Promos" option
+		if len(promoGames) > 0 {
+			fmt.Printf("%d. Promos\n", len(gameOptions)+1)
+			gameOptions = append(gameOptions, "Promos")
+		}
+
+		// Check if there are no game options
+		if len(gameOptions) == 0 {
+			fmt.Println("No available games to select.")
 			return
 		}
-		selectedGame = promoGames[choice-1]
+
+		// Read user input
+		fmt.Print("Enter the number of your choice (or 'c' to cancel): ")
+		choiceStr, _ := reader.ReadString('\n')
+		choiceStr = strings.TrimSpace(choiceStr)
+
+		// Exit program if canceled
+		if strings.ToLower(choiceStr) == "c" || strings.ToLower(choiceStr) == "cancel" {
+			fmt.Println("Exiting TeeTimeFinder... Goodbye!")
+			break
+		}
+
+		choice, err := strconv.Atoi(choiceStr)
+		if err != nil || choice < 1 || choice > len(gameOptions) {
+			fmt.Println("Invalid choice, please try again.")
+			continue
+		}
+
+		selectedGame := gameOptions[choice-1]
+		if selectedGame == "Promos" {
+			// If "Promos" is selected, display promo games
+			fmt.Println("\nSelect a promotional game:")
+			for i, promo := range uniqueNames(promoGames) {
+				fmt.Printf("%d. %s\n", i+1, promo)
+			}
+			fmt.Print("Enter the number of your choice (or 'c' to cancel): ")
+			choiceStr, _ := reader.ReadString('\n')
+			choiceStr = strings.TrimSpace(choiceStr)
+
+			// Exit program if canceled
+			if strings.ToLower(choiceStr) == "c" || strings.ToLower(choiceStr) == "cancel" {
+				fmt.Println("Exiting TeeTimeFinder... Goodbye!")
+				break
+			}
+
+			choice, err := strconv.Atoi(choiceStr)
+			if err != nil || choice < 1 || choice > len(promoGames) {
+				fmt.Println("Invalid choice, please try again.")
+				continue
+			}
+			selectedGame = promoGames[choice-1]
+		}
+
+		// Get the timeslot URLs offering this game
+		urlsOfferingGame := gameToTimeslotURLs[selectedGame]
+		fmt.Printf("You selected: %s\n", selectedGame)
+
+		fmt.Println("The following timeslot URLs offer this game:")
+		for _, timeslotURL := range urlsOfferingGame {
+			fmt.Println(timeslotURL) // Print the timeslot URLs
+		}
+
+		// Go back to the selection menu after displaying URLs
 	}
 
-	// Get the timeslot URLs offering this game
-	urlsOfferingGame := gameToTimeslotURLs[selectedGame]
-	fmt.Printf("You selected: %s\n", selectedGame)
-
-	fmt.Println("The following timeslot URLs offer this game:")
-	for _, timeslotURL := range urlsOfferingGame {
-		fmt.Println(timeslotURL)  // Print the timeslot URLs
-	}
 }
 
 // Helper function to parse the date input into day and month
