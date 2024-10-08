@@ -43,13 +43,44 @@ func init() {
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
+// Load the courses and URLs from config.txt
+func loadCourses() (map[string]string, error) {
+	courses := make(map[string]string)
+
+	file, err := os.Open(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open config file: %w", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, ",", 2)
+		if len(parts) == 2 {
+			courseName := strings.TrimSpace(parts[0])
+			courseURL := strings.TrimSpace(parts[1])
+			courses[courseName] = courseURL
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	return courses, nil
+}
+
 func runScraper() {
 	fmt.Println("Starting Golf Scraper...")
-	// URLs to scrape
-	urls := []string{
-		"https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000",
-		"https://pointwalter.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000",
-		"https://bookings.collierparkgolf.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000",
+
+	courses, err := loadCourses()
+	if err != nil {
+		fmt.Printf("Error loading courses: %v\n", err)
+		return
 	}
 
 	// Prompt the user for a date
@@ -87,14 +118,14 @@ func runScraper() {
 
 	// Categorise games
 	var standardGames, promoGames []string
-	gameToTimeslotURLs := make(map[string][]string)
+	gameToTimeslotURLs := make(map[string]map[string]string)
 
 	// Iterate over the URLs and call the Scrape function
-	for _, url := range urls {
-		fmt.Printf("Scraping URL: %s\n", url)
+	for courseName, url := range courses {
+		fmt.Printf("Scraping URL for course %s: %s\n", courseName, url)
 		gameTimeslotURLs, err := scraper.Scrape(url, dateIndex)
 		if err != nil {
-			fmt.Printf("Failed to scrape %s: %v\n", url, err)
+			fmt.Printf("Failed to scrape %s: %v\n", courseName, err)
 			continue
 		}
 
@@ -124,8 +155,11 @@ func runScraper() {
 				promoGames = append(promoGames, normalisedName)
 			}
 
-			// Track the timeslot URLs for each game
-			gameToTimeslotURLs[normalisedName] = append(gameToTimeslotURLs[normalisedName], timeslotURL)
+			// Track the timeslot URLs and the course offering the game
+			if gameToTimeslotURLs[normalisedName] == nil {
+				gameToTimeslotURLs[normalisedName] = make(map[string]string)
+			}
+			gameToTimeslotURLs[normalisedName][courseName] = timeslotURL
 		}
 	}
 
@@ -200,16 +234,41 @@ func runScraper() {
 			selectedGame = promoGames[choice-1]
 		}
 
-		// Get the timeslot URLs offering this game
-		urlsOfferingGame := gameToTimeslotURLs[selectedGame]
-		fmt.Printf("You selected: %s\n", selectedGame)
-
-		fmt.Println("The following timeslot URLs offer this game:")
-		for _, timeslotURL := range urlsOfferingGame {
-			fmt.Println(timeslotURL) // Print the timeslot URLs
+		// Display courses that offer the selected game type
+		fmt.Println("Select a course that offers this game:")
+		coursesForGame := gameToTimeslotURLs[selectedGame]
+		var courseOptions []string
+		for courseName := range coursesForGame {
+			courseOptions = append(courseOptions, courseName)
 		}
 
-		// Go back to the selection menu after displaying URLs
+		for i, courseName := range courseOptions {
+			fmt.Printf("%d. %s\n", i+1, courseName)
+		}
+
+		fmt.Print("Enter the number of your choice (or 'c' to cancel): ")
+		choiceStr, _ = reader.ReadString('\n')
+		choiceStr = strings.TrimSpace(choiceStr)
+
+		// Exit program if canceled
+		if strings.ToLower(choiceStr) == "c" || strings.ToLower(choiceStr) == "cancel" {
+			fmt.Println("Exiting TeeTimeFinder... Goodbye!")
+			break
+		}
+
+		choice, err = strconv.Atoi(choiceStr)
+		if err != nil || choice < 1 || choice > len(courseOptions) {
+			fmt.Println("Invalid choice, please try again.")
+			continue
+		}
+
+		selectedCourse := courseOptions[choice-1]
+		timeslotURL := coursesForGame[selectedCourse]
+
+		fmt.Printf("You selected: %s at %s\n", selectedGame, selectedCourse)
+		fmt.Printf("Here is the URL for this game: %s\n", timeslotURL)
+
+		// Go back to the selection menu after displaying the URL
 	}
 
 }
