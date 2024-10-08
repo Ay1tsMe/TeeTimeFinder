@@ -30,32 +30,26 @@ func Scrape(url string, dataDateIndex int) (map[string]string, error) {
 	c.OnHTML("div.feeGroupRow", func(e *colly.HTMLElement) {
 		// Extract the row heading (game type)
 		rowHeading := e.DOM.Find("div.row-heading > h3").Text()
-		fmt.Printf("Row heading: '%s'\n", rowHeading)
 		rowHeading = strings.TrimSpace(rowHeading)
 
 		if rowHeading == "" {
-			fmt.Println("Row heading is empty, skipping this row.")
 			return
 		}
 
 		// Find the cell corresponding to the selected data-date index
 		cellSelector := fmt.Sprintf("div.items-wrapper > div.cell[data-date='%d']", dataDateIndex)
-		fmt.Printf("Looking for cell with selector: '%s'\n", cellSelector)
 		cell := e.DOM.Find(cellSelector)
 
 		if cell.Length() == 0 {
-			fmt.Printf("No cell found for data-date='%d' in row '%s'\n", dataDateIndex, rowHeading)
 			return
 		}
 
 		// Check if the cell is available (i.e., does not contain "Not Available")
 		cellText := strings.TrimSpace(cell.Text())
-		fmt.Printf("Cell text for '%s': '%s'\n", rowHeading, cellText)
 
 		if strings.Contains(strings.ToLower(cellText), "not available") ||
 			strings.Contains(strings.ToLower(cellText), "no bookings available") ||
 			cellText == "" {
-			fmt.Printf("Cell for '%s' is not available or empty.\n", rowHeading)
 			return
 		}
 
@@ -66,7 +60,6 @@ func Scrape(url string, dataDateIndex int) (map[string]string, error) {
 			timeslotURL := constructTimeslotURL(url, onclickAttr)
 			if timeslotURL != "" {
 				// Store the row heading and its corresponding timeslot URL
-				fmt.Printf("Adding '%s' with timeslot URL: %s\n", rowHeading, timeslotURL)
 				rowNameToTimeslotURL[rowHeading] = timeslotURL
 			}
 		}

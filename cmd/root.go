@@ -103,10 +103,8 @@ func runScraper() {
 		date := time.Now().AddDate(0, 0, i)
 		d := date.Day()
 		m := int(date.Month())
-		fmt.Printf("Checking date index %d: day %d, month %d\n", i, d, m)
 		if d == day && m == month {
 			dateIndex = i
-			fmt.Printf("Matched date at index %d\n", i)
 			break
 		}
 	}
@@ -235,7 +233,7 @@ func runScraper() {
 		}
 
 		// Display courses that offer the selected game type
-		fmt.Println("Select a course that offers this game:")
+		fmt.Println("\nSelect a course that offers this game:")
 		coursesForGame := gameToTimeslotURLs[selectedGame]
 		var courseOptions []string
 		for courseName := range coursesForGame {
@@ -265,7 +263,7 @@ func runScraper() {
 		selectedCourse := courseOptions[choice-1]
 		timeslotURL := coursesForGame[selectedCourse]
 
-		fmt.Printf("You selected: %s at %s\n", selectedGame, selectedCourse)
+		fmt.Printf("\nYou selected: %s at %s\n", selectedGame, selectedCourse)
 		fmt.Printf("Here is the URL for this game: %s\n", timeslotURL)
 
 		// Go back to the selection menu after displaying the URL
