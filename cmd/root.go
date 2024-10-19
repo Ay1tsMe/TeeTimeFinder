@@ -121,7 +121,7 @@ func runScraper() {
 	// Iterate over the URLs and call the Scrape function
 	for courseName, url := range courses {
 		fmt.Printf("Scraping URL for course %s: %s\n", courseName, url)
-		gameTimeslotURLs, err := scraper.Scrape(url, dateIndex)
+		gameTimeslotURLs, err := scraper.ScrapeDates(url, dateIndex)
 		if err != nil {
 			fmt.Printf("Failed to scrape %s: %v\n", courseName, err)
 			continue
@@ -264,7 +264,22 @@ func runScraper() {
 		timeslotURL := coursesForGame[selectedCourse]
 
 		fmt.Printf("\nYou selected: %s at %s\n", selectedGame, selectedCourse)
-		fmt.Printf("Here is the URL for this game: %s\n", timeslotURL)
+		//fmt.Printf("Here is the URL for this game: %s\n", timeslotURL)
+
+		availableTimes, err := scraper.ScrapeTimes(timeslotURL)
+		if err != nil {
+			fmt.Printf("Failed to scrape times for %s at %s: %v\n", selectedGame, selectedCourse, err)
+			return
+		}
+
+		if len(availableTimes) == 0 {
+			fmt.Printf("No available times found for %s at %s\n", selectedGame, selectedCourse)
+		} else {
+			fmt.Println("Available times:")
+			for i, time := range availableTimes {
+				fmt.Printf("%d. %s\n", i+1, time)
+			}
+		}
 
 		// Go back to the selection menu after displaying the URL
 	}
