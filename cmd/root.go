@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -264,7 +265,6 @@ func runScraper() {
 		timeslotURL := coursesForGame[selectedCourse]
 
 		fmt.Printf("\nYou selected: %s at %s\n", selectedGame, selectedCourse)
-		//fmt.Printf("Here is the URL for this game: %s\n", timeslotURL)
 
 		availableTimes, err := scraper.ScrapeTimes(timeslotURL)
 		if err != nil {
@@ -275,15 +275,41 @@ func runScraper() {
 		if len(availableTimes) == 0 {
 			fmt.Printf("No available times found for %s at %s\n", selectedGame, selectedCourse)
 		} else {
-			fmt.Println("Available times:")
-			for i, time := range availableTimes {
-				fmt.Printf("%d. %s\n", i+1, time)
+			// Store the times in a slice for sorting
+			var times []string
+			for time := range availableTimes {
+				times = append(times, time)
 			}
+
+			// Sort the times
+			sort.Slice(times, func(i, j int) bool {
+				layout := "03:04 pm"
+				timeI, _ := time.Parse(layout, times[i])
+				timeJ, _ := time.Parse(layout, times[j])
+				return timeI.Before(timeJ)
+			})
+
+			// Print the sorted times
+			fmt.Println("Available times:")
+			for _, time := range times {
+				fmt.Printf("%s: %d spots available\n", time, availableTimes[time])
+			}
+
+			// Ask the user if they want to book a game
+			fmt.Print("Would you like to book a game at this course? (yes/no): ")
+			bookingChoice, _ := reader.ReadString('\n')
+			bookingChoice = strings.TrimSpace(strings.ToLower(bookingChoice))
+
+			// Print the timeslot URL if they want to book
+			if bookingChoice == "yes" || bookingChoice == "y" {
+				fmt.Printf("Here is the URL for this game: %s\n", timeslotURL)
+			} else {
+				fmt.Println("Returning to course selection...")
+			}
+
+			// Go back to the selection menu after displaying the URL
 		}
-
-		// Go back to the selection menu after displaying the URL
 	}
-
 }
 
 // Helper function to parse the date input into day and month

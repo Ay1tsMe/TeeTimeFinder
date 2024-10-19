@@ -78,7 +78,7 @@ func ScrapeDates(url string, dataDateIndex int) (map[string]string, error) {
 	return rowNameToTimeslotURL, nil
 }
 
-func ScrapeTimes(url string) ([]string, error) {
+func ScrapeTimes(url string) (map[string]int, error) {
 	c := colly.NewCollector(
 		colly.Async(true),
 		colly.MaxDepth(1),
@@ -92,7 +92,7 @@ func ScrapeTimes(url string) ([]string, error) {
 	})
 
 	// Stores the available times
-	var availableTimes []string
+	availableTimes := make(map[string]int)
 
 	c.OnHTML("div.row-time", func(e *colly.HTMLElement) {
 
@@ -100,9 +100,11 @@ func ScrapeTimes(url string) ([]string, error) {
 		time := e.ChildText("div.time-wrapper > h3")
 		time = strings.TrimSpace(time)
 
-		availability := e.DOM.Find("div.cell.cell-available")
-		if availability.Length() > 0 {
-			availableTimes = append(availableTimes, time)
+		availableSlots := e.DOM.Find("div.cell.cell-available").Length()
+
+		// Only include times with available slots
+		if availableSlots > 0 {
+			availableTimes[time] = availableSlots
 		}
 	})
 
