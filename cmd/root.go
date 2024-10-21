@@ -183,11 +183,19 @@ func runScraper() {
 			}
 			// Group all public holiday variations
 			if strings.Contains(strings.ToLower(normalisedName), "public holiday") {
-				if strings.Contains(strings.ToLower(normalisedName), "18 holes") {
+				// Group variations of "9 holes" and "18 holes"
+				if strings.Contains(strings.ToLower(normalisedName), "18 holes") || strings.Contains(strings.ToLower(normalisedName), "18 hole") {
 					normalisedName = "18 Holes"
-				} else if strings.Contains(strings.ToLower(normalisedName), "9 holes") {
+				} else if strings.Contains(strings.ToLower(normalisedName), "9 holes") || strings.Contains(strings.ToLower(normalisedName), "9 hole") {
 					normalisedName = "9 Holes"
 				}
+			}
+
+			// Group variations of "9 holes" and "18 holes"
+			if strings.Contains(strings.ToLower(normalisedName), "18 holes") || strings.Contains(strings.ToLower(normalisedName), "18 hole") {
+				normalisedName = "18 Holes"
+			} else if strings.Contains(strings.ToLower(normalisedName), "9 holes") || strings.Contains(strings.ToLower(normalisedName), "9 hole") {
+				normalisedName = "9 Holes"
 			}
 
 			fmt.Printf("Found available game: '%s'\n", normalisedName)
