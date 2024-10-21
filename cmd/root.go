@@ -355,20 +355,18 @@ func handleTimesDisplay(timeslotURL, selectedGame, selectedCourse string, filter
 		return
 	}
 
-	layoutTimes := sortTimesByLayout(availableTimes, filterStartTime, filterEndTime)
+	// Sort the times and layouts
+	sortedLayouts := sortTimesByLayout(availableTimes, filterStartTime, filterEndTime)
 
-	if len(layoutTimes) == 0 {
-		fmt.Println("No games available at this time. Please try another hour.")
-		return
-	}
-
-	displaySortedTimes(layoutTimes)
+	// Display the sorted times
+	displaySortedTimes(availableTimes, sortedLayouts)
 }
 
 // Function to sort times within each layout and then sort layouts by the earliest time
-func sortTimesByLayout(availableTimes map[string][]scraper.Timeslot, filterStartTime, filterEndTime time.Time) map[string][]scraper.Timeslot {
+func sortTimesByLayout(availableTimes map[string][]scraper.Timeslot, filterStartTime, filterEndTime time.Time) []string {
 	timeLayout := "03:04 pm"
 	layoutTimes := make(map[string][]scraper.Timeslot)
+	earliestTimes := make(map[string]time.Time)
 
 	for layout, timeslots := range availableTimes {
 		for _, timeSlot := range timeslots {
@@ -377,6 +375,7 @@ func sortTimesByLayout(availableTimes map[string][]scraper.Timeslot, filterStart
 				continue
 			}
 
+			// Apply filtering if specified time range is provided
 			if !filterStartTime.IsZero() && !filterEndTime.IsZero() {
 				if gameTime.Before(filterStartTime) || gameTime.After(filterEndTime) {
 					continue
@@ -384,8 +383,14 @@ func sortTimesByLayout(availableTimes map[string][]scraper.Timeslot, filterStart
 			}
 
 			layoutTimes[layout] = append(layoutTimes[layout], timeSlot)
+
+			// Track the earliest time for each layout
+			if earliestTime, exists := earliestTimes[layout]; !exists || gameTime.Before(earliestTime) {
+				earliestTimes[layout] = gameTime
+			}
 		}
 
+		// Sort times within each layout
 		sort.Slice(layoutTimes[layout], func(i, j int) bool {
 			timeI, _ := time.Parse(timeLayout, layoutTimes[layout][i].Time)
 			timeJ, _ := time.Parse(timeLayout, layoutTimes[layout][j].Time)
@@ -393,15 +398,25 @@ func sortTimesByLayout(availableTimes map[string][]scraper.Timeslot, filterStart
 		})
 	}
 
-	return layoutTimes
+	// Sort layouts based on their earliest times
+	sortedLayouts := make([]string, 0, len(earliestTimes))
+	for layout := range layoutTimes {
+		sortedLayouts = append(sortedLayouts, layout)
+	}
+
+	sort.Slice(sortedLayouts, func(i, j int) bool {
+		return earliestTimes[sortedLayouts[i]].Before(earliestTimes[sortedLayouts[j]])
+	})
+
+	return sortedLayouts
 }
 
 // Function to display sorted times
-func displaySortedTimes(layoutTimes map[string][]scraper.Timeslot) {
+func displaySortedTimes(layoutTimes map[string][]scraper.Timeslot, sortedLayouts []string) {
 	fmt.Println("Available times:")
-	for layout, timeslots := range layoutTimes {
+	for _, layout := range sortedLayouts {
 		fmt.Printf("\n%s:\n", layout)
-		for _, timeSlot := range timeslots {
+		for _, timeSlot := range layoutTimes[layout] {
 			fmt.Printf("%s: %d spots available\n", timeSlot.Time, timeSlot.AvailableSpots)
 		}
 	}
