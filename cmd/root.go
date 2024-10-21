@@ -13,6 +13,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Global variables
+var specifiedTime string
+var specifiedDate string
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "TeeTimeFinder",
@@ -41,7 +45,8 @@ func init() {
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.PersistentFlags().StringVarP(&specifiedTime, "time", "t", "", "Filter times within 1 hour before and after the specified time (e.g., 12:00)")
+	rootCmd.PersistentFlags().StringVarP(&specifiedDate, "date", "d", "", "Specify the date for the tee time search (format: DD-MM)")
 }
 
 // Load the courses and URLs from config.txt
@@ -84,11 +89,18 @@ func runScraper() {
 		return
 	}
 
-	// Prompt the user for a date
-	fmt.Print("Enter the date (DD-MM): ")
 	reader := bufio.NewReader(os.Stdin)
-	dateInput, _ := reader.ReadString('\n')
-	dateInput = strings.TrimSpace(dateInput)
+
+	// Prompt for the date if not provided
+	var dateInput string
+	if specifiedDate == "" {
+		fmt.Print("Enter the date (DD-MM): ")
+		dateInput, _ = reader.ReadString('\n')
+		dateInput = strings.TrimSpace(dateInput)
+	} else {
+		dateInput = specifiedDate
+		fmt.Printf("Using provided date: %s\n", dateInput)
+	}
 
 	// Parse the date input into day and month integers
 	day, month, err := parseDayMonth(dateInput)
@@ -97,6 +109,39 @@ func runScraper() {
 		return
 	}
 	fmt.Printf("Parsed day: %d, month: %d\n", day, month)
+
+	// Prompt for time if not provided
+	if specifiedTime == "" {
+		// Ask for the time or allow the user to leave it blank
+		fmt.Print("Enter the time (HH:MM) or press Enter to show all times: ")
+		specifiedTime, _ = reader.ReadString('\n')
+		specifiedTime = strings.TrimSpace(specifiedTime)
+
+		if specifiedTime == "" {
+			fmt.Println("No time specified, showing all times.")
+		} else {
+			// Parse the time if provided
+			fmt.Printf("Using provided time: %s\n", specifiedTime)
+		}
+	} else {
+		// Use the time provided via the flag
+		fmt.Printf("Using provided time: %s\n", specifiedTime)
+	}
+
+	// Parse the specified time flag if provided
+	var filterStartTime, filterEndTime time.Time
+	if specifiedTime != "" {
+		filterTime, err := time.Parse("15:04", specifiedTime)
+		if err != nil {
+			fmt.Println("Invalid time format. Please use HH:MM (24-hour format).")
+			return
+		}
+
+		// Define the 1-hour range before and after the given time
+		filterStartTime = filterTime.Add(-1 * time.Hour)
+		filterEndTime = filterTime.Add(1 * time.Hour)
+		fmt.Printf("Filtering results between %s and %s\n", filterStartTime.Format("15:04"), filterEndTime.Format("15:04"))
+	}
 
 	// Build a map of date indices to day and month
 	dateIndex := -1
@@ -277,8 +322,21 @@ func runScraper() {
 		} else {
 			// Store the times in a slice for sorting
 			var times []string
-			for time := range availableTimes {
-				times = append(times, time)
+			for t := range availableTimes {
+				// Parse each time and filter based on -time flag if provided
+				if specifiedTime != "" {
+					gameTime, _ := time.Parse("03:04 pm", t)
+					if gameTime.Before(filterStartTime) || gameTime.After(filterEndTime) {
+						continue // Skip times outside the 1-hour range
+					}
+				}
+				times = append(times, t)
+			}
+
+			// Check if any times remain after filtering
+			if len(times) == 0 {
+				fmt.Println("No games available at this time. Please try another hour.")
+				return
 			}
 
 			// Sort the times
@@ -291,8 +349,8 @@ func runScraper() {
 
 			// Print the sorted times
 			fmt.Println("Available times:")
-			for _, time := range times {
-				fmt.Printf("%s: %d spots available\n", time, availableTimes[time])
+			for _, t := range times {
+				fmt.Printf("%s: %d spots available\n", t, availableTimes[t])
 			}
 
 			// Ask the user if they want to book a game
