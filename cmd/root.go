@@ -13,6 +13,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Global variables
+var specifiedTime string
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "TeeTimeFinder",
@@ -41,7 +44,7 @@ func init() {
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.PersistentFlags().StringVarP(&specifiedTime, "time", "t", "", "Filter times within 1 hour before and after the specified time (e.g., 12:00)")
 }
 
 // Load the courses and URLs from config.txt
@@ -97,6 +100,21 @@ func runScraper() {
 		return
 	}
 	fmt.Printf("Parsed day: %d, month: %d\n", day, month)
+
+	// Parse the specified time flag if provided
+	var filterStartTime, filterEndTime time.Time
+	if specifiedTime != "" {
+		filterTime, err := time.Parse("15:04", specifiedTime)
+		if err != nil {
+			fmt.Println("Invalid time format. Please use HH:MM (24-hour format).")
+			return
+		}
+
+		// Define the 1-hour range before and after the given time
+		filterStartTime = filterTime.Add(-1 * time.Hour)
+		filterEndTime = filterTime.Add(1 * time.Hour)
+		fmt.Printf("Filtering results between %s and %s\n", filterStartTime.Format("15:04"), filterEndTime.Format("15:04"))
+	}
 
 	// Build a map of date indices to day and month
 	dateIndex := -1
@@ -277,8 +295,15 @@ func runScraper() {
 		} else {
 			// Store the times in a slice for sorting
 			var times []string
-			for time := range availableTimes {
-				times = append(times, time)
+			for t := range availableTimes {
+				// Parse each time and filter based on -time flag if provided
+				if specifiedTime != "" {
+					gameTime, _ := time.Parse("03:04 pm", t)
+					if gameTime.Before(filterStartTime) || gameTime.After(filterEndTime) {
+						continue // Skip times outside the 1-hour range
+					}
+				}
+				times = append(times, t)
 			}
 
 			// Sort the times
@@ -291,8 +316,8 @@ func runScraper() {
 
 			// Print the sorted times
 			fmt.Println("Available times:")
-			for _, time := range times {
-				fmt.Printf("%s: %d spots available\n", time, availableTimes[time])
+			for _, t := range times {
+				fmt.Printf("%s: %d spots available\n", t, availableTimes[t])
 			}
 
 			// Ask the user if they want to book a game
