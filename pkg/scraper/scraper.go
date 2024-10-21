@@ -9,6 +9,11 @@ import (
 	"github.com/gocolly/colly"
 )
 
+type Timeslot struct {
+	Time           string
+	AvailableSpots int
+}
+
 // Scrapes the date URL and returns a map of games and their corresponding timeslot URLs
 func ScrapeDates(url string, dataDateIndex int) (map[string]string, error) {
 	c := colly.NewCollector(
@@ -78,7 +83,7 @@ func ScrapeDates(url string, dataDateIndex int) (map[string]string, error) {
 	return rowNameToTimeslotURL, nil
 }
 
-func ScrapeTimes(url string) (map[string]int, error) {
+func ScrapeTimes(url string) (map[string][]Timeslot, error) {
 	c := colly.NewCollector(
 		colly.Async(true),
 		colly.MaxDepth(1),
@@ -92,7 +97,7 @@ func ScrapeTimes(url string) (map[string]int, error) {
 	})
 
 	// Stores the available times
-	availableTimes := make(map[string]int)
+	layoutToTimes := make(map[string][]Timeslot)
 
 	c.OnHTML("div.row-time", func(e *colly.HTMLElement) {
 
@@ -100,11 +105,25 @@ func ScrapeTimes(url string) (map[string]int, error) {
 		time := e.ChildText("div.time-wrapper > h3")
 		time = strings.TrimSpace(time)
 
+		// Extract the layout (course configuration)
+		layout := e.ChildText("div.time-wrapper > h4")
+		layout = strings.TrimSpace(layout)
+
+		if layout == "" || time == "" {
+			return
+		}
+
 		availableSlots := e.DOM.Find("div.cell.cell-available").Length()
 
 		// Only include times with available slots
 		if availableSlots > 0 {
-			availableTimes[time] = availableSlots
+			timeSlot := Timeslot{
+				Time:           time,
+				AvailableSpots: availableSlots,
+			}
+
+			// Add this timeSlot to the layout
+			layoutToTimes[layout] = append(layoutToTimes[layout], timeSlot)
 		}
 	})
 
@@ -118,7 +137,7 @@ func ScrapeTimes(url string) (map[string]int, error) {
 	}
 
 	c.Wait()
-	return availableTimes, nil
+	return layoutToTimes, nil
 
 }
 

@@ -347,18 +347,52 @@ func runScraper() {
 				return
 			}
 
-			// Sort the times
-			sort.Slice(times, func(i, j int) bool {
-				layout := "03:04 pm"
-				timeI, _ := time.Parse(layout, times[i])
-				timeJ, _ := time.Parse(layout, times[j])
-				return timeI.Before(timeJ)
-			})
+			type LayoutTime struct {
+				Layout   string
+				TimeSlot scraper.Timeslot
+			}
 
 			// Print the sorted times
 			fmt.Println("Available times:")
-			for _, t := range times {
-				fmt.Printf("%s: %d spots available\n", t, availableTimes[t])
+
+			layoutTimes := make(map[string][]scraper.Timeslot)
+			timeLayout := "03:04 pm"
+
+			// First, group timeslots by layout
+			for layout, timeslots := range availableTimes {
+				for _, timeSlot := range timeslots {
+					layoutTimes[layout] = append(layoutTimes[layout], timeSlot)
+				}
+			}
+
+			// Sort the times within each layout
+			for layout, timeslots := range layoutTimes {
+				sort.Slice(timeslots, func(i, j int) bool {
+					timeI, _ := time.Parse(timeLayout, timeslots[i].Time)
+					timeJ, _ := time.Parse(timeLayout, timeslots[j].Time)
+					return timeI.Before(timeJ)
+				})
+				layoutTimes[layout] = timeslots // Update with sorted times
+			}
+
+			// Now, sort the layouts by their earliest timeslot
+			sortedLayouts := make([]string, 0, len(layoutTimes))
+			for layout := range layoutTimes {
+				sortedLayouts = append(sortedLayouts, layout)
+			}
+
+			sort.Slice(sortedLayouts, func(i, j int) bool {
+				firstTimeI, _ := time.Parse(timeLayout, layoutTimes[sortedLayouts[i]][0].Time)
+				firstTimeJ, _ := time.Parse(timeLayout, layoutTimes[sortedLayouts[j]][0].Time)
+				return firstTimeI.Before(firstTimeJ)
+			})
+
+			// Print the sorted times by layout
+			for _, layout := range sortedLayouts {
+				fmt.Printf("\n%s:\n", layout)
+				for _, timeSlot := range layoutTimes[layout] {
+					fmt.Printf("%s: %d spots available\n", timeSlot.Time, timeSlot.AvailableSpots)
+				}
 			}
 
 			// Ask the user if they want to book a game
