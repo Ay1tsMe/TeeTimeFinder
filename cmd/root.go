@@ -34,7 +34,7 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&specifiedTime, "time", "t", "", "Filter times within 1 hour before and after the specified time (e.g., 12:00)")
-	rootCmd.PersistentFlags().StringVarP(&specifiedDate, "date", "d", "", "Specify the date for the tee time search (format: DD-MM)")
+	rootCmd.PersistentFlags().StringVarP(&specifiedDate, "date", "d", "", "Specify the date for the tee time search (format: DD-MM-YYYY)")
 }
 
 // Function to run the scraper
@@ -47,11 +47,11 @@ func runScraper() {
 		return
 	}
 
-	day, month, err := handleDateInput()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+    selectedDate, err := handleDateInput()
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
 
     filterStartMinutes, filterEndMinutes, err := handleTimeInput()
     if err != nil {
@@ -59,13 +59,7 @@ func runScraper() {
         return
     }
 
-	dateIndex, err := calculateDateIndex(day, month)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	standardGames, promoGames, gameToTimeslotURLs := scrapeCourseData(courses, dateIndex)
+	standardGames, promoGames, gameToTimeslotURLs := scrapeCourseData(courses, selectedDate)
 
 	if len(standardGames) == 0 && len(promoGames) == 0 {
 		fmt.Println("No available games found on the selected date.")
@@ -132,31 +126,28 @@ func loadCourses() (map[string]string, error) {
 }
 
 // Function to handle date input
-func handleDateInput() (int, int, error) {
-	reader := bufio.NewReader(os.Stdin)
-	var dateInput string
+func handleDateInput() (time.Time, error) {
+    var dateInput string
 
-	if specifiedDate == "" {
-		fmt.Print("Enter the date (DD-MM): ")
-		dateInput, _ = reader.ReadString('\n')
-		dateInput = strings.TrimSpace(dateInput)
-	} else {
-		dateInput = specifiedDate
-		fmt.Printf("Using provided date: %s\n", dateInput)
-	}
+    if specifiedDate == "" {
+        fmt.Print("Enter the date (DD-MM-YYYY): ")
+        dateInput = strings.TrimSpace(readInput())
+    } else {
+        dateInput = specifiedDate
+        fmt.Printf("Using provided date: %s\n", dateInput)
+    }
 
-	return parseDayMonth(dateInput)
-}
+    // Parse the date
+    selectedDate, err := time.Parse("02-01-2006", dateInput)
+    if err != nil {
+        return time.Time{}, fmt.Errorf("Invalid date format. Please use DD-MM-YYYY.")
+    }
 
-// Function to calculate date index (for up to 5 days ahead)
-func calculateDateIndex(day, month int) (int, error) {
-	for i := 0; i <= 4; i++ {
-		date := time.Now().AddDate(0, 0, i)
-		if date.Day() == day && int(date.Month()) == month {
-			return i, nil
-		}
-	}
-	return -1, fmt.Errorf("Selected date is out of range (today to 5 days ahead).")
+    if selectedDate.Before(time.Now()) {
+        return time.Time{}, fmt.Errorf("Selected date is in the past.")
+    }
+
+    return selectedDate, nil
 }
 
 func handleTimeInput() (int, int, error) {
@@ -226,22 +217,22 @@ func parseDayMonth(dateStr string) (int, int, error) {
 }
 
 // Function to scrape course data
-func scrapeCourseData(courses map[string]string, dateIndex int) ([]string, []string, map[string]map[string]string) {
-	var standardGames, promoGames []string
-	gameToTimeslotURLs := make(map[string]map[string]string)
+func scrapeCourseData(courses map[string]string, selectedDate time.Time) ([]string, []string, map[string]map[string]string) {
+    var standardGames, promoGames []string
+    gameToTimeslotURLs := make(map[string]map[string]string)
 
-	for courseName, url := range courses {
-		fmt.Printf("Scraping URL for course %s: %s\n", courseName, url)
-		gameTimeslotURLs, err := scraper.ScrapeDates(url, dateIndex)
-		if err != nil {
-			fmt.Printf("Failed to scrape %s: %v\n", courseName, err)
-			continue
-		}
+    for courseName, url := range courses {
+        fmt.Printf("Scraping URL for course %s: %s\n", courseName, url)
+        gameTimeslotURLs, err := scraper.ScrapeDates(url, selectedDate)
+        if err != nil {
+            fmt.Printf("Failed to scrape %s: %v\n", courseName, err)
+            continue
+        }
 
-		standardGames, promoGames, gameToTimeslotURLs = categoriseGames(gameTimeslotURLs, courseName, standardGames, promoGames, gameToTimeslotURLs)
-	}
+        standardGames, promoGames, gameToTimeslotURLs = categoriseGames(gameTimeslotURLs, courseName, standardGames, promoGames, gameToTimeslotURLs)
+    }
 
-	return standardGames, promoGames, gameToTimeslotURLs
+    return standardGames, promoGames, gameToTimeslotURLs
 }
 
 // Function to categorise games and store them in maps

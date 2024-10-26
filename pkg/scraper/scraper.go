@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"net/url"
 	"time"
 
 	"github.com/gocolly/colly"
@@ -15,72 +16,88 @@ type Timeslot struct {
 }
 
 // Scrapes the date URL and returns a map of games and their corresponding timeslot URLs
-func ScrapeDates(url string, dataDateIndex int) (map[string]string, error) {
-	c := colly.NewCollector(
-		colly.Async(true),
-		colly.MaxDepth(1),
-	)
+func ScrapeDates(baseURL string, selectedDate time.Time) (map[string]string, error) {
+    c := colly.NewCollector(
+        colly.Async(true),
+        colly.MaxDepth(1),
+    )
 
-	// Implement rate limiting
-	c.Limit(&colly.LimitRule{
-		DomainGlob:  "*",
-		Parallelism: 2,
-		Delay:       1 * time.Second,
-	})
+    // Implement rate limiting
+    c.Limit(&colly.LimitRule{
+        DomainGlob:  "*",
+        Parallelism: 2,
+        Delay:       1 * time.Second,
+    })
 
-	// Map to store the row names and their associated timeslot URLs
-	rowNameToTimeslotURL := make(map[string]string)
+    // Map to store the row names and their associated timeslot URLs
+    rowNameToTimeslotURL := make(map[string]string)
 
-	// Cycle through the feeGroupRow to capture each game's type and available timeslot
-	c.OnHTML("div.feeGroupRow", func(e *colly.HTMLElement) {
-		// Extract the row heading (game type)
-		rowHeading := e.DOM.Find("div.row-heading > h3").Text()
-		rowHeading = strings.TrimSpace(rowHeading)
+    dateStr := selectedDate.Format("2006-01-02")
 
-		if rowHeading == "" {
-			return
-		}
+    // Parse the base URL
+    parsedBaseURL, err := url.Parse(baseURL)
+    if err != nil {
+        return nil, fmt.Errorf("invalid base URL: %v", err)
+    }
 
-		// Find the cell corresponding to the selected data-date index
-		cellSelector := fmt.Sprintf("div.items-wrapper > div.cell[data-date='%d']", dataDateIndex)
-		cell := e.DOM.Find(cellSelector)
+    // Update query parameters
+    q := parsedBaseURL.Query()
+    q.Set("selectedDate", dateStr)
+    q.Set("weekends", "false")
+    parsedBaseURL.RawQuery = q.Encode()
 
-		if cell.Length() == 0 {
-			return
-		}
+    // Visit the URL
+    err = c.Visit(parsedBaseURL.String())
+    if err != nil {
+        return nil, err
+    }
 
-		// Check if the cell is available (i.e., does not contain "Not Available")
-		cellText := strings.TrimSpace(cell.Text())
+    // Keep a copy of the parsed base URL for constructing timeslot URLs
+    baseURLCopy := *parsedBaseURL
 
-		if strings.Contains(strings.ToLower(cellText), "not available") ||
-			strings.Contains(strings.ToLower(cellText), "no bookings available") ||
-			cellText == "" {
-			return
-		}
+    // Cycle through the feeGroupRow to capture each game's type and available timeslot
+    c.OnHTML("div.feeGroupRow", func(e *colly.HTMLElement) {
+        // Extract the row heading (game type)
+        rowHeading := e.DOM.Find("div.row-heading > h3").Text()
+        rowHeading = strings.TrimSpace(rowHeading)
 
-		// Extract the "onclick" attribute for the timeslot URL construction
-		onclickAttr, exists := cell.Attr("onclick")
-		if exists && strings.Contains(onclickAttr, "redirectToTimesheet") {
-			// Extract the feeGroupId and selectedDate from the JavaScript function call
-			timeslotURL := constructTimeslotURL(url, onclickAttr)
-			if timeslotURL != "" {
-				// Store the row heading and its corresponding timeslot URL
-				rowNameToTimeslotURL[rowHeading] = timeslotURL
-			}
-		}
-	})
+        if rowHeading == "" {
+            return
+        }
 
-	c.OnError(func(_ *colly.Response, err error) {
-		log.Println("Error:", err)
-	})
+        // Find the cell corresponding to the selected date (data-date="0")
+        cell := e.DOM.Find("div.items-wrapper > div.cell[data-date='0']")
+        if cell.Length() == 0 {
+            return
+        }
 
-	err := c.Visit(url)
-	if err != nil {
-		return nil, err
-	}
+        // Check if the cell is available (i.e., does not contain "Not Available")
+        cellText := strings.TrimSpace(cell.Text())
 
-	c.Wait()
-	return rowNameToTimeslotURL, nil
+        if strings.Contains(strings.ToLower(cellText), "not available") ||
+            strings.Contains(strings.ToLower(cellText), "no bookings available") ||
+            cellText == "" {
+            return
+        }
+
+        // Extract the "onclick" attribute for the timeslot URL construction
+        onclickAttr, exists := cell.Attr("onclick")
+        if exists && strings.Contains(onclickAttr, "redirectToTimesheet") {
+            // Extract the feeGroupId and selectedDate from the JavaScript function call
+            timeslotURL := constructTimeslotURL(&baseURLCopy, onclickAttr)
+            if timeslotURL != "" {
+                // Store the row heading and its corresponding timeslot URL
+                rowNameToTimeslotURL[rowHeading] = timeslotURL
+            }
+        }
+    })
+
+    c.OnError(func(_ *colly.Response, err error) {
+        log.Println("Error:", err)
+    })
+
+    c.Wait()
+    return rowNameToTimeslotURL, nil
 }
 
 func ScrapeTimes(url string) (map[string][]Timeslot, error) {
@@ -142,29 +159,36 @@ func ScrapeTimes(url string) (map[string][]Timeslot, error) {
 }
 
 // Helper function to construct the full timeslot URL based on the onclick attribute
-func constructTimeslotURL(baseURL string, onclickAttr string) string {
-	// Example of onclick content: "javascript:redirectToTimesheet('101527','2024-09-22');"
-	// We need to extract the feeGroupId ('101527') and the date ('2024-09-22')
-	// Then construct the timeslot URL: https://{base_url}/ViewPublicTimesheet.msp?bookingResourceId=3000000&selectedDate={date}&feeGroupId={feeGroupId}
+func constructTimeslotURL(parsedBaseURL *url.URL, onclickAttr string) string {
+    // Extract the portion between the parentheses
+    start := strings.Index(onclickAttr, "(")
+    end := strings.Index(onclickAttr, ")")
+    if start != -1 && end != -1 && end > start {
+        // Extract the parameters
+        params := onclickAttr[start+1 : end]
+        paramList := strings.Split(params, ",")
+        if len(paramList) == 2 {
+            feeGroupID := strings.Trim(paramList[0], "' ")
+            selectedDate := strings.Trim(paramList[1], "' ")
 
-	// Extract the portion between the parentheses
-	start := strings.Index(onclickAttr, "(")
-	end := strings.Index(onclickAttr, ")")
-	if start != -1 && end != -1 && end > start {
-		// Extract the parameters
-		params := onclickAttr[start+1 : end]
-		paramList := strings.Split(params, ",")
-		if len(paramList) == 2 {
-			feeGroupID := strings.Trim(paramList[0], "' ")
-			selectedDate := strings.Trim(paramList[1], "' ")
+            // Copy the base URL to avoid modifying the original
+            timeslotURL := *parsedBaseURL
 
-			// Construct the correct timeslot URL using "/ViewPublicTimesheet.msp"
-			timeslotURL := fmt.Sprintf("%s/ViewPublicTimesheet.msp?bookingResourceId=3000000&selectedDate=%s&feeGroupId=%s",
-				strings.Split(baseURL, "/ViewPublicCalendar.msp")[0], // Use the base part of the URL before "/ViewPublicCalendar.msp"
-				selectedDate,
-				feeGroupID)
-			return timeslotURL
-		}
-	}
-	return ""
+            // Update path to /guests/bookings/ViewPublicTimesheet.msp
+            timeslotURL.Path = "/guests/bookings/ViewPublicTimesheet.msp"
+
+            // Update query parameters
+            q := timeslotURL.Query()
+            q.Set("feeGroupId", feeGroupID)
+            q.Set("selectedDate", selectedDate)
+            q.Set("weekends", "false")
+            timeslotURL.RawQuery = q.Encode()
+
+            // Print the constructed timeslot URL for debugging
+            fmt.Printf("DEBUG: Constructed timeslot URL: %s\n", timeslotURL.String())
+
+            return timeslotURL.String()
+        }
+    }
+    return ""
 }
