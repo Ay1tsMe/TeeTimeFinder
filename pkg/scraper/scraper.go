@@ -184,9 +184,6 @@ func constructTimeslotURL(parsedBaseURL *url.URL, onclickAttr string) string {
             q.Set("weekends", "false")
             timeslotURL.RawQuery = q.Encode()
 
-            // Print the constructed timeslot URL for debugging
-            fmt.Printf("DEBUG: Constructed timeslot URL: %s\n", timeslotURL.String())
-
             return timeslotURL.String()
         }
     }

@@ -239,7 +239,6 @@ func scrapeCourseData(courses map[string]string, selectedDate time.Time) ([]stri
 func categoriseGames(gameTimeslotURLs map[string]string, courseName string, standardGames, promoGames []string, gameToTimeslotURLs map[string]map[string]string) ([]string, []string, map[string]map[string]string) {
 	for name, timeslotURL := range gameTimeslotURLs {
 		normalisedName := normaliseGameName(name)
-		fmt.Printf("DEBUG: Found available game: '%s' at course '%s'\n", normalisedName, courseName)
 
 		// Check if it's a standard game
 		if isStandardGame(normalisedName) {
@@ -253,8 +252,6 @@ func categoriseGames(gameTimeslotURLs map[string]string, courseName string, stan
 		}
 		gameToTimeslotURLs[normalisedName][courseName] = timeslotURL
 
-		// Debug print to confirm timeslot URL is being added correctly
-		fmt.Printf("DEBUG: Added timeslot URL for '%s' at '%s': %s\n", normalisedName, courseName, timeslotURL)
 	}
 
 	return standardGames, promoGames, gameToTimeslotURLs
@@ -387,22 +384,16 @@ func sortTimesByLayout(availableTimes map[string][]scraper.Timeslot, filterStart
     layoutTimes := make(map[string][]scraper.Timeslot)
     earliestTimes := make(map[string]int)
 
-    fmt.Printf("DEBUG: filterStartMinutes=%d, filterEndMinutes=%d\n", filterStartMinutes, filterEndMinutes)
-
     for layout, timeslots := range availableTimes {
         for _, timeSlot := range timeslots {
             gameTimeMinutes, err := parseTimeToMinutes(timeSlot.Time)
             if err != nil {
-                fmt.Printf("DEBUG: Failed to parse time %s: %v\n", timeSlot.Time, err)
                 continue
             }
-
-            fmt.Printf("DEBUG: Time %s parsed to %d minutes\n", timeSlot.Time, gameTimeMinutes)
 
             // Apply filtering if specified time range is provided
             if filterStartMinutes != 0 || filterEndMinutes != 0 {
                 if gameTimeMinutes < filterStartMinutes || gameTimeMinutes > filterEndMinutes {
-                    fmt.Printf("DEBUG: Time %s (%d minutes) is outside filter range (%d - %d), skipping\n", timeSlot.Time, gameTimeMinutes, filterStartMinutes, filterEndMinutes)
                     continue
                 }
             }
