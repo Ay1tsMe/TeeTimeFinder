@@ -53,11 +53,11 @@ func runScraper() {
 		return
 	}
 
-	filterStartTime, filterEndTime, err := handleTimeInput()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+    filterStartMinutes, filterEndMinutes, err := handleTimeInput()
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
 
 	dateIndex, err := calculateDateIndex(day, month)
 	if err != nil {
@@ -86,7 +86,7 @@ func runScraper() {
 		}
 
 		// Display the available times and prompt for booking
-		handleTimesDisplay(timeslotURL, selectedGame, selectedCourse, filterStartTime, filterEndTime)
+		handleTimesDisplay(timeslotURL, selectedGame, selectedCourse, filterStartMinutes, filterEndMinutes)
 
 		// Ask user if they want to book this game
 		fmt.Print("Would you like to book a game at this course? (yes/no): ")
@@ -159,29 +159,54 @@ func calculateDateIndex(day, month int) (int, error) {
 	return -1, fmt.Errorf("Selected date is out of range (today to 5 days ahead).")
 }
 
-// Function to handle time input
-func handleTimeInput() (time.Time, time.Time, error) {
-	reader := bufio.NewReader(os.Stdin)
-	var filterStartTime, filterEndTime time.Time
+func handleTimeInput() (int, int, error) {
+    var timeInput string
 
-	if specifiedTime == "" {
-		fmt.Print("Enter the time (HH:MM) or press Enter to show all times: ")
-		specifiedTime, _ = reader.ReadString('\n')
-		specifiedTime = strings.TrimSpace(specifiedTime)
-	}
+    if specifiedTime == "" {
+        fmt.Print("Enter the time (HH:MM) or press Enter to show all times: ")
+        timeInput = strings.TrimSpace(readInput())
+    } else {
+        timeInput = specifiedTime
+        fmt.Printf("Using provided time: %s\n", timeInput)
+    }
 
-	if specifiedTime != "" {
-		filterTime, err := time.Parse("15:04", specifiedTime)
-		if err != nil {
-			return filterStartTime, filterEndTime, fmt.Errorf("Invalid time format. Please use HH:MM (24-hour format).")
-		}
-		filterStartTime = filterTime.Add(-1 * time.Hour)
-		filterEndTime = filterTime.Add(1 * time.Hour)
-		fmt.Printf("Filtering results between %s and %s\n", filterStartTime.Format("15:04"), filterEndTime.Format("15:04"))
-	}
+    if timeInput != "" {
+        filterTimeMinutes, err := parseTimeToMinutes24(timeInput)
+        if err != nil {
+            return 0, 0, fmt.Errorf("Invalid time format. Please use HH:MM (24-hour format).")
+        }
+        filterStartMinutes := filterTimeMinutes - 60
+        filterEndMinutes := filterTimeMinutes + 60
+        fmt.Printf("Filtering results between %02d:%02d and %02d:%02d\n",
+            filterStartMinutes/60, filterStartMinutes%60,
+            filterEndMinutes/60, filterEndMinutes%60)
+        return filterStartMinutes, filterEndMinutes, nil
+    }
 
-	return filterStartTime, filterEndTime, nil
+    return 0, 0, nil
 }
+
+func parseTimeToMinutes(timeStr string) (int, error) {
+    timeStr = strings.TrimSpace(strings.ToUpper(timeStr))
+    layouts := []string{"03:04 PM", "3:04 PM"}
+    for _, layout := range layouts {
+        t, err := time.Parse(layout, timeStr)
+        if err == nil {
+            return t.Hour()*60 + t.Minute(), nil
+        }
+    }
+    fmt.Printf("Failed to parse timeStr '%s' with any known layout\n", timeStr)
+    return 0, fmt.Errorf("failed to parse time '%s'", timeStr)
+}
+
+func parseTimeToMinutes24(timeStr string) (int, error) {
+    t, err := time.Parse("15:04", timeStr)
+    if err != nil {
+        return 0, err
+    }
+    return t.Hour()*60 + t.Minute(), nil
+}
+
 
 // Function to parse day and month
 func parseDayMonth(dateStr string) (int, int, error) {
@@ -342,73 +367,82 @@ func readChoice(options []string) string {
 	return options[choice-1]
 }
 
-// Function to handle times display and sorting
-func handleTimesDisplay(timeslotURL, selectedGame, selectedCourse string, filterStartTime, filterEndTime time.Time) {
-	availableTimes, err := scraper.ScrapeTimes(timeslotURL)
-	if err != nil {
-		fmt.Printf("Failed to scrape times for %s at %s: %v\n", selectedGame, selectedCourse, err)
-		return
-	}
+func handleTimesDisplay(timeslotURL, selectedGame, selectedCourse string, filterStartMinutes, filterEndMinutes int) {
+    availableTimes, err := scraper.ScrapeTimes(timeslotURL)
+    if err != nil {
+        fmt.Printf("Failed to scrape times for %s at %s: %v\n", selectedGame, selectedCourse, err)
+        return
+    }
 
-	if len(availableTimes) == 0 {
-		fmt.Printf("No available times found for %s at %s\n", selectedGame, selectedCourse)
-		return
-	}
+    if len(availableTimes) == 0 {
+        fmt.Printf("No available times found for %s at %s\n", selectedGame, selectedCourse)
+        return
+    }
 
-	// Sort the times and layouts
-	sortedLayouts := sortTimesByLayout(availableTimes, filterStartTime, filterEndTime)
+    // Sort the times and layouts, filtering happens here
+	sortedLayouts, layoutTimes := sortTimesByLayout(availableTimes, filterStartMinutes, filterEndMinutes)
 
-	// Display the sorted times
-	displaySortedTimes(availableTimes, sortedLayouts)
+    // Check if there are any times after filtering
+    if len(sortedLayouts) == 0 {
+        fmt.Println("No available times within the specified time range.")
+        return
+    }
+
+    // Display the sorted times
+    displaySortedTimes(layoutTimes, sortedLayouts)
 }
 
-// Function to sort times within each layout and then sort layouts by the earliest time
-func sortTimesByLayout(availableTimes map[string][]scraper.Timeslot, filterStartTime, filterEndTime time.Time) []string {
-	timeLayout := "03:04 pm"
-	layoutTimes := make(map[string][]scraper.Timeslot)
-	earliestTimes := make(map[string]time.Time)
+func sortTimesByLayout(availableTimes map[string][]scraper.Timeslot, filterStartMinutes, filterEndMinutes int) ([]string, map[string][]scraper.Timeslot) {
+    layoutTimes := make(map[string][]scraper.Timeslot)
+    earliestTimes := make(map[string]int)
 
-	for layout, timeslots := range availableTimes {
-		for _, timeSlot := range timeslots {
-			gameTime, err := time.Parse(timeLayout, timeSlot.Time)
-			if err != nil {
-				continue
-			}
+    fmt.Printf("DEBUG: filterStartMinutes=%d, filterEndMinutes=%d\n", filterStartMinutes, filterEndMinutes)
 
-			// Apply filtering if specified time range is provided
-			if !filterStartTime.IsZero() && !filterEndTime.IsZero() {
-				if gameTime.Before(filterStartTime) || gameTime.After(filterEndTime) {
-					continue
-				}
-			}
+    for layout, timeslots := range availableTimes {
+        for _, timeSlot := range timeslots {
+            gameTimeMinutes, err := parseTimeToMinutes(timeSlot.Time)
+            if err != nil {
+                fmt.Printf("DEBUG: Failed to parse time %s: %v\n", timeSlot.Time, err)
+                continue
+            }
 
-			layoutTimes[layout] = append(layoutTimes[layout], timeSlot)
+            fmt.Printf("DEBUG: Time %s parsed to %d minutes\n", timeSlot.Time, gameTimeMinutes)
 
-			// Track the earliest time for each layout
-			if earliestTime, exists := earliestTimes[layout]; !exists || gameTime.Before(earliestTime) {
-				earliestTimes[layout] = gameTime
-			}
-		}
+            // Apply filtering if specified time range is provided
+            if filterStartMinutes != 0 || filterEndMinutes != 0 {
+                if gameTimeMinutes < filterStartMinutes || gameTimeMinutes > filterEndMinutes {
+                    fmt.Printf("DEBUG: Time %s (%d minutes) is outside filter range (%d - %d), skipping\n", timeSlot.Time, gameTimeMinutes, filterStartMinutes, filterEndMinutes)
+                    continue
+                }
+            }
 
-		// Sort times within each layout
-		sort.Slice(layoutTimes[layout], func(i, j int) bool {
-			timeI, _ := time.Parse(timeLayout, layoutTimes[layout][i].Time)
-			timeJ, _ := time.Parse(timeLayout, layoutTimes[layout][j].Time)
-			return timeI.Before(timeJ)
-		})
-	}
+            layoutTimes[layout] = append(layoutTimes[layout], timeSlot)
 
-	// Sort layouts based on their earliest times
-	sortedLayouts := make([]string, 0, len(earliestTimes))
-	for layout := range layoutTimes {
-		sortedLayouts = append(sortedLayouts, layout)
-	}
+            // Track the earliest time for each layout
+            if earliestTime, exists := earliestTimes[layout]; !exists || gameTimeMinutes < earliestTime {
+                earliestTimes[layout] = gameTimeMinutes
+            }
+        }
 
-	sort.Slice(sortedLayouts, func(i, j int) bool {
-		return earliestTimes[sortedLayouts[i]].Before(earliestTimes[sortedLayouts[j]])
-	})
+        // Sort times within each layout
+        sort.Slice(layoutTimes[layout], func(i, j int) bool {
+            timeIMinutes, _ := parseTimeToMinutes(layoutTimes[layout][i].Time)
+            timeJMinutes, _ := parseTimeToMinutes(layoutTimes[layout][j].Time)
+            return timeIMinutes < timeJMinutes
+        })
+    }
 
-	return sortedLayouts
+    // Sort layouts based on their earliest times
+    sortedLayouts := make([]string, 0, len(earliestTimes))
+    for layout := range layoutTimes {
+        sortedLayouts = append(sortedLayouts, layout)
+    }
+
+    sort.Slice(sortedLayouts, func(i, j int) bool {
+        return earliestTimes[sortedLayouts[i]] < earliestTimes[sortedLayouts[j]]
+    })
+
+    return sortedLayouts, layoutTimes
 }
 
 // Function to display sorted times
