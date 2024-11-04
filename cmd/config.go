@@ -57,13 +57,19 @@ func loadExistingCourses() map[string]string {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue // Skip empty lines and comments
 		}
 		parts := strings.SplitN(line, ",", 2)
 		if len(parts) == 2 {
 			courseName := strings.TrimSpace(parts[0])
 			courseURL := strings.TrimSpace(parts[1])
+
+			// Validate course name and URL
+			if courseName == "" || courseURL == "" {
+				continue // Skip entries with missing name or URL
+			}
+
 			courses[courseURL] = courseName
 		}
 	}
