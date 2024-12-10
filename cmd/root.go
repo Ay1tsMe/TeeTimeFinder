@@ -16,6 +16,9 @@ import (
 var specifiedTime string
 var specifiedDate string
 
+// Pre-scraped data structure to hold all times if a time filter is used
+var preScrapedTimes map[string]map[string]map[string][]scraper.Timeslot
+
 var rootCmd = &cobra.Command{
 	Use:   "TeeTimeFinder",
 	Short: "A CLI tool for finding golf tee times",
@@ -47,23 +50,41 @@ func runScraper() {
 		return
 	}
 
-    selectedDate, err := handleDateInput()
-    if err != nil {
-        fmt.Println(err)
-        return
-    }
+	selectedDate, err := handleDateInput()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
-    filterStartMinutes, filterEndMinutes, err := handleTimeInput()
-    if err != nil {
-        fmt.Println(err)
-        return
-    }
+	filterStartMinutes, filterEndMinutes, err := handleTimeInput()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
 	standardGames, promoGames, gameToTimeslotURLs := scrapeCourseData(courses, selectedDate)
 
 	if len(standardGames) == 0 && len(promoGames) == 0 {
 		fmt.Println("No available games found on the selected date.")
 		return
+	}
+
+	// If a specific time is given, pre-scrape all times now.
+	// This will allow us to know up-front which courses actually have availability in that time window.
+	timeFilterUsed := (filterStartMinutes != 0 || filterEndMinutes != 0)
+
+	if timeFilterUsed {
+		fmt.Println("Time specified. Searching all courses for available timeslots within the specified range. This can take some time, Please wait...")
+		preScrapedTimes = preScrapeAllTimes(gameToTimeslotURLs, filterStartMinutes, filterEndMinutes)
+
+		// After pre-scraping, filter out games and courses that have no availability within the time window
+		standardGames, promoGames, gameToTimeslotURLs = filterAvailableGamesAndCourses(standardGames, promoGames, gameToTimeslotURLs, preScrapedTimes)
+
+		// If after filtering there are no courses/games, inform the user
+		if len(standardGames) == 0 && len(promoGames) == 0 {
+			fmt.Println("No available games found for the specified time range.")
+			return
+		}
 	}
 
 	for {
@@ -79,8 +100,14 @@ func runScraper() {
 			break
 		}
 
-		// Display the available times and prompt for booking
-		handleTimesDisplay(timeslotURL, selectedGame, selectedCourse, filterStartMinutes, filterEndMinutes)
+		// Display available times using pre-scraped data if time is specified, or scrape now if time not specified
+		if timeFilterUsed {
+			// Use pre-scraped data
+			handleTimesDisplayPreScraped(preScrapedTimes[selectedGame][selectedCourse], filterStartMinutes, filterEndMinutes)
+		} else {
+			// Scrape on-demand
+			handleTimesDisplay(timeslotURL, selectedGame, selectedCourse, filterStartMinutes, filterEndMinutes)
+		}
 
 		// Ask user if they want to book this game
 		fmt.Print("Would you like to book a game at this course? (yes/no): ")
@@ -93,6 +120,159 @@ func runScraper() {
 			fmt.Println("Returning to game selection...")
 		}
 	}
+}
+
+// Function to pre-scrape all times if time is specified
+func preScrapeAllTimes(gameToTimeslotURLs map[string]map[string]string, filterStartMinutes, filterEndMinutes int) map[string]map[string]map[string][]scraper.Timeslot {
+	preScraped := make(map[string]map[string]map[string][]scraper.Timeslot)
+	for game, courses := range gameToTimeslotURLs {
+		if preScraped[game] == nil {
+			preScraped[game] = make(map[string]map[string][]scraper.Timeslot)
+		}
+		for course, timeslotURL := range courses {
+			availableTimes, err := scraper.ScrapeTimes(timeslotURL)
+			if err != nil {
+				continue
+			}
+
+			filteredTimes := filterAndSortTimes(availableTimes, filterStartMinutes, filterEndMinutes)
+			preScraped[game][course] = filteredTimes
+		}
+	}
+	return preScraped
+}
+
+// Filter out games/courses that have no availability after pre-scraping
+func filterAvailableGamesAndCourses(standardGames, promoGames []string, gameToTimeslotURLs map[string]map[string]string, preScraped map[string]map[string]map[string][]scraper.Timeslot) ([]string, []string, map[string]map[string]string) {
+	newStandard := []string{}
+	newPromo := []string{}
+
+	for _, game := range standardGames {
+		if courseMap, ok := preScraped[game]; ok {
+			// Remove courses with no times
+			filteredCourseMap := make(map[string]string)
+			for course, url := range gameToTimeslotURLs[game] {
+				if len(courseMap[course]) > 0 {
+					filteredCourseMap[course] = url
+				}
+			}
+			if len(filteredCourseMap) > 0 {
+				gameToTimeslotURLs[game] = filteredCourseMap
+				newStandard = append(newStandard, game)
+			} else {
+				// No courses available for this game in the time window
+				delete(gameToTimeslotURLs, game)
+			}
+		}
+	}
+
+	for _, game := range promoGames {
+		if courseMap, ok := preScraped[game]; ok {
+			// Remove courses with no times
+			filteredCourseMap := make(map[string]string)
+			for course, url := range gameToTimeslotURLs[game] {
+				if len(courseMap[course]) > 0 {
+					filteredCourseMap[course] = url
+				}
+			}
+			if len(filteredCourseMap) > 0 {
+				gameToTimeslotURLs[game] = filteredCourseMap
+				newPromo = append(newPromo, game)
+			} else {
+				// No courses available for this promo in the time window
+				delete(gameToTimeslotURLs, game)
+			}
+		}
+	}
+
+	return newStandard, newPromo, gameToTimeslotURLs
+}
+
+func filterAndSortTimes(availableTimes map[string][]scraper.Timeslot, filterStartMinutes, filterEndMinutes int) map[string][]scraper.Timeslot {
+	layoutTimes := make(map[string][]scraper.Timeslot)
+	earliestTimes := make(map[string]int)
+
+	for layout, timeslots := range availableTimes {
+		for _, ts := range timeslots {
+			gameTimeMinutes, err := parseTimeToMinutes(ts.Time)
+			if err != nil {
+				continue
+			}
+			if (filterStartMinutes == 0 && filterEndMinutes == 0) ||
+				(gameTimeMinutes >= filterStartMinutes && gameTimeMinutes <= filterEndMinutes) {
+				layoutTimes[layout] = append(layoutTimes[layout], ts)
+				if earliestTime, exists := earliestTimes[layout]; !exists || gameTimeMinutes < earliestTime {
+					earliestTimes[layout] = gameTimeMinutes
+				}
+			}
+		}
+
+		// Sort times within each layout
+		sort.Slice(layoutTimes[layout], func(i, j int) bool {
+			timeIMinutes, _ := parseTimeToMinutes(layoutTimes[layout][i].Time)
+			timeJMinutes, _ := parseTimeToMinutes(layoutTimes[layout][j].Time)
+			return timeIMinutes < timeJMinutes
+		})
+	}
+
+	return layoutTimes
+}
+
+// handleTimesDisplayPreScraped shows the times directly from the pre-scraped data
+func handleTimesDisplayPreScraped(layoutTimes map[string][]scraper.Timeslot, filterStartMinutes, filterEndMinutes int) {
+	// layoutTimes is already filtered and sorted by preScrapeAllTimes()
+	if len(layoutTimes) == 0 {
+		fmt.Println("No available times within the specified time range.")
+		return
+	}
+
+	// Display the sorted times
+	displaySortedTimes(layoutTimes, sortLayoutsByEarliest(layoutTimes))
+}
+
+func sortLayoutsByEarliest(layoutTimes map[string][]scraper.Timeslot) []string {
+	earliestTimes := make(map[string]int)
+	for layout, times := range layoutTimes {
+		if len(times) > 0 {
+			mins, _ := parseTimeToMinutes(times[0].Time)
+			earliestTimes[layout] = mins
+		}
+	}
+
+	sortedLayouts := make([]string, 0, len(earliestTimes))
+	for layout := range earliestTimes {
+		sortedLayouts = append(sortedLayouts, layout)
+	}
+
+	sort.Slice(sortedLayouts, func(i, j int) bool {
+		return earliestTimes[sortedLayouts[i]] < earliestTimes[sortedLayouts[j]]
+	})
+	return sortedLayouts
+}
+
+func handleTimesDisplay(timeslotURL, selectedGame, selectedCourse string, filterStartMinutes, filterEndMinutes int) {
+	availableTimes, err := scraper.ScrapeTimes(timeslotURL)
+	if err != nil {
+		fmt.Printf("Failed to scrape times for %s at %s: %v\n", selectedGame, selectedCourse, err)
+		return
+	}
+
+	if len(availableTimes) == 0 {
+		fmt.Printf("No available times found for %s at %s\n", selectedGame, selectedCourse)
+		return
+	}
+
+	// Sort the times and layouts, filtering happens here
+	sortedLayouts, layoutTimes := sortTimesByLayout(availableTimes, filterStartMinutes, filterEndMinutes)
+
+	// Check if there are any times after filtering
+	if len(sortedLayouts) == 0 {
+		fmt.Println("No available times within the specified time range.")
+		return
+	}
+
+	// Display the sorted times
+	displaySortedTimes(layoutTimes, sortedLayouts)
 }
 
 // Function to load courses from config file
@@ -127,77 +307,76 @@ func loadCourses() (map[string]string, error) {
 
 // Function to handle date input
 func handleDateInput() (time.Time, error) {
-    var dateInput string
+	var dateInput string
 
-    if specifiedDate == "" {
-        fmt.Print("Enter the date (DD-MM-YYYY): ")
-        dateInput = strings.TrimSpace(readInput())
-    } else {
-        dateInput = specifiedDate
-        fmt.Printf("Using provided date: %s\n", dateInput)
-    }
+	if specifiedDate == "" {
+		fmt.Print("Enter the date (DD-MM-YYYY): ")
+		dateInput = strings.TrimSpace(readInput())
+	} else {
+		dateInput = specifiedDate
+		fmt.Printf("Using provided date: %s\n", dateInput)
+	}
 
-    // Parse the date
-    selectedDate, err := time.Parse("02-01-2006", dateInput)
-    if err != nil {
-        return time.Time{}, fmt.Errorf("Invalid date format. Please use DD-MM-YYYY.")
-    }
+	// Parse the date
+	selectedDate, err := time.Parse("02-01-2006", dateInput)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("Invalid date format. Please use DD-MM-YYYY.")
+	}
 
-    if selectedDate.Before(time.Now()) {
-        return time.Time{}, fmt.Errorf("Selected date is in the past.")
-    }
+	if selectedDate.Before(time.Now()) {
+		return time.Time{}, fmt.Errorf("Selected date is in the past.")
+	}
 
-    return selectedDate, nil
+	return selectedDate, nil
 }
 
 func handleTimeInput() (int, int, error) {
-    var timeInput string
+	var timeInput string
 
-    if specifiedTime == "" {
-        fmt.Print("Enter the time (HH:MM) or press Enter to show all times: ")
-        timeInput = strings.TrimSpace(readInput())
-    } else {
-        timeInput = specifiedTime
-        fmt.Printf("Using provided time: %s\n", timeInput)
-    }
+	if specifiedTime == "" {
+		fmt.Print("Enter the time (HH:MM) or press Enter to show all times: ")
+		timeInput = strings.TrimSpace(readInput())
+	} else {
+		timeInput = specifiedTime
+		fmt.Printf("Using provided time: %s\n", timeInput)
+	}
 
-    if timeInput != "" {
-        filterTimeMinutes, err := parseTimeToMinutes24(timeInput)
-        if err != nil {
-            return 0, 0, fmt.Errorf("Invalid time format. Please use HH:MM (24-hour format).")
-        }
-        filterStartMinutes := filterTimeMinutes - 60
-        filterEndMinutes := filterTimeMinutes + 60
-        fmt.Printf("Filtering results between %02d:%02d and %02d:%02d\n",
-            filterStartMinutes/60, filterStartMinutes%60,
-            filterEndMinutes/60, filterEndMinutes%60)
-        return filterStartMinutes, filterEndMinutes, nil
-    }
+	if timeInput != "" {
+		filterTimeMinutes, err := parseTimeToMinutes24(timeInput)
+		if err != nil {
+			return 0, 0, fmt.Errorf("Invalid time format. Please use HH:MM (24-hour format).")
+		}
+		filterStartMinutes := filterTimeMinutes - 60
+		filterEndMinutes := filterTimeMinutes + 60
+		fmt.Printf("Filtering results between %02d:%02d and %02d:%02d\n",
+			filterStartMinutes/60, filterStartMinutes%60,
+			filterEndMinutes/60, filterEndMinutes%60)
+		return filterStartMinutes, filterEndMinutes, nil
+	}
 
-    return 0, 0, nil
+	return 0, 0, nil
 }
 
 func parseTimeToMinutes(timeStr string) (int, error) {
-    timeStr = strings.TrimSpace(strings.ToUpper(timeStr))
-    layouts := []string{"03:04 PM", "3:04 PM"}
-    for _, layout := range layouts {
-        t, err := time.Parse(layout, timeStr)
-        if err == nil {
-            return t.Hour()*60 + t.Minute(), nil
-        }
-    }
-    fmt.Printf("Failed to parse timeStr '%s' with any known layout\n", timeStr)
-    return 0, fmt.Errorf("failed to parse time '%s'", timeStr)
+	timeStr = strings.TrimSpace(strings.ToUpper(timeStr))
+	layouts := []string{"03:04 PM", "3:04 PM"}
+	for _, layout := range layouts {
+		t, err := time.Parse(layout, timeStr)
+		if err == nil {
+			return t.Hour()*60 + t.Minute(), nil
+		}
+	}
+	fmt.Printf("Failed to parse timeStr '%s' with any known layout\n", timeStr)
+	return 0, fmt.Errorf("failed to parse time '%s'", timeStr)
 }
 
 func parseTimeToMinutes24(timeStr string) (int, error) {
-    t, err := time.Parse("15:04", timeStr)
-    if err != nil {
-        return 0, err
-    }
-    return t.Hour()*60 + t.Minute(), nil
+	t, err := time.Parse("15:04", timeStr)
+	if err != nil {
+		return 0, err
+	}
+	return t.Hour()*60 + t.Minute(), nil
 }
-
 
 // Function to parse day and month
 func parseDayMonth(dateStr string) (int, int, error) {
@@ -218,21 +397,21 @@ func parseDayMonth(dateStr string) (int, int, error) {
 
 // Function to scrape course data
 func scrapeCourseData(courses map[string]string, selectedDate time.Time) ([]string, []string, map[string]map[string]string) {
-    var standardGames, promoGames []string
-    gameToTimeslotURLs := make(map[string]map[string]string)
+	var standardGames, promoGames []string
+	gameToTimeslotURLs := make(map[string]map[string]string)
 
-    for courseName, url := range courses {
-        fmt.Printf("Scraping URL for course %s: %s\n", courseName, url)
-        gameTimeslotURLs, err := scraper.ScrapeDates(url, selectedDate)
-        if err != nil {
-            fmt.Printf("Failed to scrape %s: %v\n", courseName, err)
-            continue
-        }
+	for courseName, url := range courses {
+		fmt.Printf("Scraping URL for course %s: %s\n", courseName, url)
+		gameTimeslotURLs, err := scraper.ScrapeDates(url, selectedDate)
+		if err != nil {
+			fmt.Printf("Failed to scrape %s: %v\n", courseName, err)
+			continue
+		}
 
-        standardGames, promoGames, gameToTimeslotURLs = categoriseGames(gameTimeslotURLs, courseName, standardGames, promoGames, gameToTimeslotURLs)
-    }
+		standardGames, promoGames, gameToTimeslotURLs = categoriseGames(gameTimeslotURLs, courseName, standardGames, promoGames, gameToTimeslotURLs)
+	}
 
-    return standardGames, promoGames, gameToTimeslotURLs
+	return standardGames, promoGames, gameToTimeslotURLs
 }
 
 // Function to categorise games and store them in maps
@@ -355,76 +534,51 @@ func readChoice(options []string) string {
 	return options[choice-1]
 }
 
-func handleTimesDisplay(timeslotURL, selectedGame, selectedCourse string, filterStartMinutes, filterEndMinutes int) {
-    availableTimes, err := scraper.ScrapeTimes(timeslotURL)
-    if err != nil {
-        fmt.Printf("Failed to scrape times for %s at %s: %v\n", selectedGame, selectedCourse, err)
-        return
-    }
-
-    if len(availableTimes) == 0 {
-        fmt.Printf("No available times found for %s at %s\n", selectedGame, selectedCourse)
-        return
-    }
-
-    // Sort the times and layouts, filtering happens here
-	sortedLayouts, layoutTimes := sortTimesByLayout(availableTimes, filterStartMinutes, filterEndMinutes)
-
-    // Check if there are any times after filtering
-    if len(sortedLayouts) == 0 {
-        fmt.Println("No available times within the specified time range.")
-        return
-    }
-
-    // Display the sorted times
-    displaySortedTimes(layoutTimes, sortedLayouts)
-}
-
 func sortTimesByLayout(availableTimes map[string][]scraper.Timeslot, filterStartMinutes, filterEndMinutes int) ([]string, map[string][]scraper.Timeslot) {
-    layoutTimes := make(map[string][]scraper.Timeslot)
-    earliestTimes := make(map[string]int)
+	layoutTimes := make(map[string][]scraper.Timeslot)
+	earliestTimes := make(map[string]int)
 
-    for layout, timeslots := range availableTimes {
-        for _, timeSlot := range timeslots {
-            gameTimeMinutes, err := parseTimeToMinutes(timeSlot.Time)
-            if err != nil {
-                continue
-            }
+	for layout, timeslots := range availableTimes {
+		for _, timeSlot := range timeslots {
+			gameTimeMinutes, err := parseTimeToMinutes(timeSlot.Time)
+			if err != nil {
+				continue
+			}
 
-            // Apply filtering if specified time range is provided
-            if filterStartMinutes != 0 || filterEndMinutes != 0 {
-                if gameTimeMinutes < filterStartMinutes || gameTimeMinutes > filterEndMinutes {
-                    continue
-                }
-            }
+			// Apply filtering if specified time range is provided
+			if filterStartMinutes != 0 || filterEndMinutes != 0 {
+				if gameTimeMinutes < filterStartMinutes || gameTimeMinutes > filterEndMinutes {
+					continue
+				}
+			}
 
-            layoutTimes[layout] = append(layoutTimes[layout], timeSlot)
+			layoutTimes[layout] = append(layoutTimes[layout], timeSlot)
 
-            // Track the earliest time for each layout
-            if earliestTime, exists := earliestTimes[layout]; !exists || gameTimeMinutes < earliestTime {
-                earliestTimes[layout] = gameTimeMinutes
-            }
-        }
+			// Track the earliest time for each layout
+			if earliestTime, exists := earliestTimes[layout]; !exists || gameTimeMinutes < earliestTime {
+				earliestTimes[layout] = gameTimeMinutes
+			}
+		}
 
-        // Sort times within each layout
-        sort.Slice(layoutTimes[layout], func(i, j int) bool {
-            timeIMinutes, _ := parseTimeToMinutes(layoutTimes[layout][i].Time)
-            timeJMinutes, _ := parseTimeToMinutes(layoutTimes[layout][j].Time)
-            return timeIMinutes < timeJMinutes
-        })
-    }
+		// Sort times within each layout
+		sort.Slice(layoutTimes[layout], func(i, j int) bool {
+			timeIMinutes, _ := parseTimeToMinutes(layoutTimes[layout][i].Time)
+			timeJMinutes, _ := parseTimeToMinutes(layoutTimes[layout][j].Time)
+			return timeIMinutes < timeJMinutes
+		})
+	}
 
-    // Sort layouts based on their earliest times
-    sortedLayouts := make([]string, 0, len(earliestTimes))
-    for layout := range layoutTimes {
-        sortedLayouts = append(sortedLayouts, layout)
-    }
+	// Sort layouts based on their earliest times
+	sortedLayouts := make([]string, 0, len(earliestTimes))
+	for layout := range layoutTimes {
+		sortedLayouts = append(sortedLayouts, layout)
+	}
 
-    sort.Slice(sortedLayouts, func(i, j int) bool {
-        return earliestTimes[sortedLayouts[i]] < earliestTimes[sortedLayouts[j]]
-    })
+	sort.Slice(sortedLayouts, func(i, j int) bool {
+		return earliestTimes[sortedLayouts[i]] < earliestTimes[sortedLayouts[j]]
+	})
 
-    return sortedLayouts, layoutTimes
+	return sortedLayouts, layoutTimes
 }
 
 // Function to display sorted times
