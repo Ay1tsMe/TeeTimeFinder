@@ -28,6 +28,7 @@ var specifiedTime string
 var specifiedDate string
 var specifiedSpots int
 var verboseMode bool
+var useCourseFlag bool
 
 // Pre-scraped data structure to hold all times if a time filter is used
 var preScrapedTimes map[string]map[string]map[string][]scraper.Timeslot
@@ -40,8 +41,9 @@ var rootCmd = &cobra.Command{
 	Use:   "TeeTimeFinder",
 	Short: "A CLI tool for finding golf tee times",
 	Long:  `TeeTimeFinder allows you to find and book tee times for MiClub golf courses.`,
+	Args:  cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		runScraper()
+		runScraper(args)
 	},
 }
 
@@ -56,6 +58,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&specifiedTime, "time", "t", "", "Filter times within 1 hour before and after the specified time (e.g., 12:00)")
 	rootCmd.PersistentFlags().StringVarP(&specifiedDate, "date", "d", "", "Specify the date for the tee time search (format: DD-MM-YYYY)")
 	rootCmd.PersistentFlags().IntVarP(&specifiedSpots, "spots", "s", 0, "Filter timeslots based on available player spots (1-4)")
+	rootCmd.PersistentFlags().BoolVarP(&useCourseFlag, "courses", "c", false, "Specify particular courses to search. Remaining arguements are treated as course names")
 	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "Enable verbose debug output") // New verbose flag
 }
 
@@ -73,7 +76,7 @@ func debugPrintf(format string, a ...interface{}) {
 }
 
 // Function to run the scraper
-func runScraper() {
+func runScraper(args []string) {
 	fmt.Println("Starting Golf Scraper...")
 
 	courses, err := loadCourses()
@@ -82,6 +85,66 @@ func runScraper() {
 		return
 	}
 	debugPrintf("Loaded courses: %+v\n", courses)
+
+	var filtered map[string]string
+	// If -c is given, treat args as course names directly
+	if useCourseFlag {
+		if len(args) == 0 {
+			fmt.Println("Error: No course names provided after the -c flag.")
+			return
+		}
+
+		filtered = make(map[string]string)
+		for _, cName := range args {
+			cName = strings.TrimSpace(cName)
+			url, exists := courses[cName]
+			if !exists {
+				fmt.Printf("Error: Course '%s' does not exist in config.\n", cName)
+				return
+			}
+			filtered[cName] = url
+		}
+
+		courses = filtered
+	} else {
+		// No -c flag: Prompt the user
+		fmt.Print("Press Enter to search ALL courses or type 'specify' to pick which courses to search: ")
+		choice := strings.TrimSpace(readInput())
+
+		if strings.ToLower(choice) == "specify" {
+			// User wants to specify particular courses interactively
+			filtered = make(map[string]string)
+			fmt.Println("Enter course names line by line. Type 'done' when finished:")
+			for {
+				fmt.Print("Course Name: ")
+				cName := strings.TrimSpace(readInput())
+				if strings.ToLower(cName) == "done" {
+					break
+				}
+				if cName == "" {
+					fmt.Println("Please enter a valid course name or 'done' if finished.")
+					continue
+				}
+
+				url, exists := courses[cName]
+				if !exists {
+					fmt.Printf("Error: Course '%s' does not exist in config.\n", cName)
+					return
+				}
+				filtered[cName] = url
+			}
+
+			if len(filtered) == 0 {
+				fmt.Println("No courses specified. Searching all courses.")
+			} else {
+				courses = filtered
+			}
+		} else if choice != "" {
+			// User typed something invalid other than Enter or "specify"
+			fmt.Println("Invalid choice. Searching all courses.")
+		}
+		// If user just pressed Enter, we do nothing and proceed with all courses
+	}
 
 	selectedDate, err := handleDateInput()
 	if err != nil {
@@ -527,9 +590,9 @@ func scrapeCourseData(courses map[string]string, selectedDate time.Time) ([]stri
 
 func categoriseGames(gameTimeslotURLs map[string]string, courseName string, standardGames, promoGames []string, gameToTimeslotURLs map[string]map[string]string) ([]string, []string, map[string]map[string]string) {
 	for name, timeslotURL := range gameTimeslotURLs {
-		debugPrintf("Categorizing game: '%s'\n", name)
+		debugPrintf("Categorising game: '%s'\n", name)
 		normalisedName := normaliseGameName(name)
-		debugPrintf("Normalized game name '%s' to '%s'\n", name, normalisedName)
+		debugPrintf("Normalised game name '%s' to '%s'\n", name, normalisedName)
 
 		if isStandardGame(normalisedName) {
 			standardGames = append(standardGames, normalisedName)
