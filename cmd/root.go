@@ -28,7 +28,7 @@ var specifiedTime string
 var specifiedDate string
 var specifiedSpots int
 var verboseMode bool
-var useCourseFlag bool
+var courseList []string
 
 // Pre-scraped data structure to hold all times if a time filter is used
 var preScrapedTimes map[string]map[string]map[string][]scraper.Timeslot
@@ -58,8 +58,27 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&specifiedTime, "time", "t", "", "Filter times within 1 hour before and after the specified time (e.g., 12:00)")
 	rootCmd.PersistentFlags().StringVarP(&specifiedDate, "date", "d", "", "Specify the date for the tee time search (format: DD-MM-YYYY)")
 	rootCmd.PersistentFlags().IntVarP(&specifiedSpots, "spots", "s", 0, "Filter timeslots based on available player spots (1-4)")
-	rootCmd.PersistentFlags().BoolVarP(&useCourseFlag, "courses", "c", false, "Specify particular courses to search. Remaining arguements are treated as course names")
-	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "Enable verbose debug output") // New verbose flag
+	rootCmd.PersistentFlags().StringArrayVarP(&courseList, "courses", "c", nil, "Specify particular courses to search")
+	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "Enable verbose debug output")
+
+	// Register the completion function here
+	rootCmd.RegisterFlagCompletionFunc("courses", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		// Load courses from config
+		courses, err := loadCourses()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		// Filter courses
+		var completions []string
+		for courseName := range courses {
+			if strings.HasPrefix(strings.ToLower(courseName), strings.ToLower(toComplete)) {
+				completions = append(completions, courseName)
+			}
+		}
+
+		return completions, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 // Debug print functions that only print if verboseMode is true
@@ -87,15 +106,11 @@ func runScraper(args []string) {
 	debugPrintf("Loaded courses: %+v\n", courses)
 
 	var filtered map[string]string
-	// If -c is given, treat args as course names directly
-	if useCourseFlag {
-		if len(args) == 0 {
-			fmt.Println("Error: No course names provided after the -c flag.")
-			return
-		}
-
+	// We now check if the user provided any courses with the -c flag by checking courseList
+	if len(courseList) > 0 {
+		// The user specified one or more courses
 		filtered = make(map[string]string)
-		for _, cName := range args {
+		for _, cName := range courseList {
 			cName = strings.TrimSpace(cName)
 			url, exists := courses[cName]
 			if !exists {
@@ -104,15 +119,13 @@ func runScraper(args []string) {
 			}
 			filtered[cName] = url
 		}
-
 		courses = filtered
 	} else {
-		// No -c flag: Prompt the user
+		// No courses specified via -c, prompt the user as before
 		fmt.Print("Press Enter to search ALL courses or type 'specify' to pick which courses to search: ")
 		choice := strings.TrimSpace(readInput())
 
 		if strings.ToLower(choice) == "specify" {
-			// User wants to specify particular courses interactively
 			filtered = make(map[string]string)
 			fmt.Println("Enter course names line by line. Type 'done' when finished:")
 			for {
@@ -140,10 +153,9 @@ func runScraper(args []string) {
 				courses = filtered
 			}
 		} else if choice != "" {
-			// User typed something invalid other than Enter or "specify"
 			fmt.Println("Invalid choice. Searching all courses.")
 		}
-		// If user just pressed Enter, we do nothing and proceed with all courses
+		// If user just pressed Enter, proceed with all courses
 	}
 
 	selectedDate, err := handleDateInput()
