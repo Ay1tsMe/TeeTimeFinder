@@ -179,8 +179,36 @@ var configCmd = &cobra.Command{
 	},
 }
 
+// Command to show the config
+var configShowCmd = &cobra.Command{
+	Use:   "show",
+	Short: "Show all configured golf courses",
+	Run: func(cmd *cobra.Command, args []string) {
+		if !ConfigExists() {
+			fmt.Println("No config file found. Please add courses using `TeeTimeFinder config`.")
+			return
+		}
+
+		courses := loadExistingCourses()
+		if len(courses) == 0 {
+			fmt.Println("No courses found in the config.")
+			return
+		}
+
+		fmt.Println("Configured Golf Courses:")
+		i := 1
+
+		for courseURL, courseName := range courses {
+			fmt.Printf("%d) %s - %s\n", i, courseName, courseURL)
+			i++
+		}
+	},
+}
+
 // Initializes the command and adds the -overwrite flag
 func init() {
 	rootCmd.AddCommand(configCmd)
 	configCmd.Flags().BoolVarP(&overwrite, "overwrite", "o", false, "Overwrite the existing config")
+
+	configCmd.AddCommand(configShowCmd)
 }
