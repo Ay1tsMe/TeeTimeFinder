@@ -28,6 +28,7 @@ var specifiedTime string
 var specifiedDate string
 var specifiedSpots int
 var verboseMode bool
+var courseList []string
 
 // Pre-scraped data structure to hold all times if a time filter is used
 var preScrapedTimes map[string]map[string]map[string][]scraper.Timeslot
@@ -40,8 +41,9 @@ var rootCmd = &cobra.Command{
 	Use:   "TeeTimeFinder",
 	Short: "A CLI tool for finding golf tee times",
 	Long:  `TeeTimeFinder allows you to find and book tee times for MiClub golf courses.`,
+	Args:  cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		runScraper()
+		runScraper(args)
 	},
 }
 
@@ -56,7 +58,27 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&specifiedTime, "time", "t", "", "Filter times within 1 hour before and after the specified time (e.g., 12:00)")
 	rootCmd.PersistentFlags().StringVarP(&specifiedDate, "date", "d", "", "Specify the date for the tee time search (format: DD-MM-YYYY)")
 	rootCmd.PersistentFlags().IntVarP(&specifiedSpots, "spots", "s", 0, "Filter timeslots based on available player spots (1-4)")
-	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "Enable verbose debug output") // New verbose flag
+	rootCmd.PersistentFlags().StringArrayVarP(&courseList, "courses", "c", nil, "Specify particular courses to search")
+	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "Enable verbose debug output")
+
+	// Register the completion function here
+	rootCmd.RegisterFlagCompletionFunc("courses", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		// Load courses from config
+		courses, err := loadCourses()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		// Filter courses
+		var completions []string
+		for courseName := range courses {
+			if strings.HasPrefix(strings.ToLower(courseName), strings.ToLower(toComplete)) {
+				completions = append(completions, courseName)
+			}
+		}
+
+		return completions, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 // Debug print functions that only print if verboseMode is true
@@ -73,7 +95,7 @@ func debugPrintf(format string, a ...interface{}) {
 }
 
 // Function to run the scraper
-func runScraper() {
+func runScraper(args []string) {
 	fmt.Println("Starting Golf Scraper...")
 
 	courses, err := loadCourses()
@@ -82,6 +104,59 @@ func runScraper() {
 		return
 	}
 	debugPrintf("Loaded courses: %+v\n", courses)
+
+	var filtered map[string]string
+	// We now check if the user provided any courses with the -c flag by checking courseList
+	if len(courseList) > 0 {
+		// The user specified one or more courses
+		filtered = make(map[string]string)
+		for _, cName := range courseList {
+			cName = strings.TrimSpace(cName)
+			url, exists := courses[cName]
+			if !exists {
+				fmt.Printf("Error: Course '%s' does not exist in config.\n", cName)
+				return
+			}
+			filtered[cName] = url
+		}
+		courses = filtered
+	} else {
+		// No courses specified via -c, prompt the user as before
+		fmt.Print("Press Enter to search ALL courses or type 'specify' to pick which courses to search: ")
+		choice := strings.TrimSpace(readInput())
+
+		if strings.ToLower(choice) == "specify" {
+			filtered = make(map[string]string)
+			fmt.Println("Enter course names line by line. Type 'done' when finished:")
+			for {
+				fmt.Print("Course Name: ")
+				cName := strings.TrimSpace(readInput())
+				if strings.ToLower(cName) == "done" {
+					break
+				}
+				if cName == "" {
+					fmt.Println("Please enter a valid course name or 'done' if finished.")
+					continue
+				}
+
+				url, exists := courses[cName]
+				if !exists {
+					fmt.Printf("Error: Course '%s' does not exist in config.\n", cName)
+					return
+				}
+				filtered[cName] = url
+			}
+
+			if len(filtered) == 0 {
+				fmt.Println("No courses specified. Searching all courses.")
+			} else {
+				courses = filtered
+			}
+		} else if choice != "" {
+			fmt.Println("Invalid choice. Searching all courses.")
+		}
+		// If user just pressed Enter, proceed with all courses
+	}
 
 	selectedDate, err := handleDateInput()
 	if err != nil {
@@ -527,9 +602,9 @@ func scrapeCourseData(courses map[string]string, selectedDate time.Time) ([]stri
 
 func categoriseGames(gameTimeslotURLs map[string]string, courseName string, standardGames, promoGames []string, gameToTimeslotURLs map[string]map[string]string) ([]string, []string, map[string]map[string]string) {
 	for name, timeslotURL := range gameTimeslotURLs {
-		debugPrintf("Categorizing game: '%s'\n", name)
+		debugPrintf("Categorising game: '%s'\n", name)
 		normalisedName := normaliseGameName(name)
-		debugPrintf("Normalized game name '%s' to '%s'\n", name, normalisedName)
+		debugPrintf("Normalised game name '%s' to '%s'\n", name, normalisedName)
 
 		if isStandardGame(normalisedName) {
 			standardGames = append(standardGames, normalisedName)
