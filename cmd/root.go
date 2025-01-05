@@ -27,6 +27,7 @@ var allowedStandardModifiers = map[string]bool{
 var specifiedTime string
 var specifiedDate string
 var specifiedSpots int
+var globalSelectedDate time.Time
 var verboseMode bool
 var courseList []string
 
@@ -164,6 +165,8 @@ func runScraper(args []string) {
 		return
 	}
 	debugPrintf("Selected date: %s\n", selectedDate.Format("2006-01-02"))
+
+	globalSelectedDate = selectedDate
 
 	filterStartMinutes, filterEndMinutes, err := handleTimeInput()
 	if err != nil {
@@ -527,7 +530,17 @@ func handleDateInput() (time.Time, error) {
 		return time.Time{}, fmt.Errorf("Invalid date format. Please use DD-MM-YYYY.")
 	}
 
-	if selectedDate.Before(time.Now()) {
+	// Compare only calendar days (ignore hours)
+	now := time.Now()
+	nowYear, nowMonth, nowDay := now.Date()
+	selYear, selMonth, selDay := selectedDate.Date()
+
+	// Create a midnight-based time.Time for each, just for the date comparison
+	todayMidnight := time.Date(nowYear, nowMonth, nowDay, 0, 0, 0, 0, now.Location())
+	selectedMidnight := time.Date(selYear, selMonth, selDay, 0, 0, 0, 0, selectedDate.Location())
+
+	// If the selected day is strictly before "today," reject
+	if selectedMidnight.Before(todayMidnight) {
 		return time.Time{}, fmt.Errorf("Selected date is in the past.")
 	}
 
@@ -550,11 +563,27 @@ func handleTimeInput() (int, int, error) {
 		if err != nil {
 			return 0, 0, fmt.Errorf("Invalid time format. Please use HH:MM (24-hour format).")
 		}
+
+		now := time.Now()
+		nowY, nowM, nowD := now.Date()
+		selY, selM, selD := globalSelectedDate.Date()
+
+		if nowY == selY && nowM == selM && nowD == selD {
+			currentTimeMinutes := now.Hour()*60 + now.Minute()
+			if filterTimeMinutes < currentTimeMinutes {
+				return 0, 0, fmt.Errorf(
+					"The specified time %s is already in the past (%02d:%02d).",
+					timeInput, now.Hour(), now.Minute(),
+				)
+			}
+		}
+
 		filterStartMinutes := filterTimeMinutes - 60
 		filterEndMinutes := filterTimeMinutes + 60
 		fmt.Printf("Filtering results between %02d:%02d and %02d:%02d\n",
 			filterStartMinutes/60, filterStartMinutes%60,
 			filterEndMinutes/60, filterEndMinutes%60)
+
 		return filterStartMinutes, filterEndMinutes, nil
 	}
 
