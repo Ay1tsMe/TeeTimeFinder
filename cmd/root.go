@@ -27,6 +27,7 @@ var allowedStandardModifiers = map[string]bool{
 var specifiedTime string
 var specifiedDate string
 var specifiedSpots int
+var globalSelectedDate time.Time
 var verboseMode bool
 var courseList []string
 
@@ -164,6 +165,8 @@ func runScraper(args []string) {
 		return
 	}
 	debugPrintf("Selected date: %s\n", selectedDate.Format("2006-01-02"))
+
+	globalSelectedDate = selectedDate
 
 	filterStartMinutes, filterEndMinutes, err := handleTimeInput()
 	if err != nil {
@@ -562,12 +565,17 @@ func handleTimeInput() (int, int, error) {
 		}
 
 		now := time.Now()
-		currentTimeMinutes := now.Hour()*60 + now.Minute()
-		if filterTimeMinutes < currentTimeMinutes {
-			return 0, 0, fmt.Errorf(
-				"The specified time %s is already in the past (%02d:%02d).",
-				timeInput, now.Hour(), now.Minute(),
-			)
+		nowY, nowM, nowD := now.Date()
+		selY, selM, selD := globalSelectedDate.Date()
+
+		if nowY == selY && nowM == selM && nowD == selD {
+			currentTimeMinutes := now.Hour()*60 + now.Minute()
+			if filterTimeMinutes < currentTimeMinutes {
+				return 0, 0, fmt.Errorf(
+					"The specified time %s is already in the past (%02d:%02d).",
+					timeInput, now.Hour(), now.Minute(),
+				)
+			}
 		}
 
 		filterStartMinutes := filterTimeMinutes - 60
