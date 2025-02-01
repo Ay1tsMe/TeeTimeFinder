@@ -16,6 +16,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type CourseInfo struct {
+	Name        string
+	URL         string
+	WebsiteType string
+}
+
 var configPath = filepath.Join(os.Getenv("HOME"), ".config", "TeeTimeFinder", "config.txt")
 var overwrite bool
 
@@ -40,8 +46,8 @@ func CreateDir() bool {
 }
 
 // Loads the existing courses from the config file into a map
-func loadExistingCourses() map[string]string {
-	courses := make(map[string]string)
+func loadExistingCourses() map[string]CourseInfo {
+	courses := make(map[string]CourseInfo)
 
 	if !ConfigExists() {
 		return courses
@@ -60,18 +66,24 @@ func loadExistingCourses() map[string]string {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, ",", 2)
-		if len(parts) == 2 {
+		parts := strings.SplitN(line, ",", 3)
+		if len(parts) == 3 {
 			courseName := strings.TrimSpace(parts[0])
 			courseURL := strings.TrimSpace(parts[1])
-			courses[courseURL] = courseName
+			websiteType := strings.TrimSpace(parts[2])
+
+			courses[courseURL] = CourseInfo{
+				Name:        courseName,
+				URL:         courseURL,
+				WebsiteType: websiteType,
+			}
 		}
 	}
 	return courses
 }
 
 // Appends new courses to the config file
-func appendCoursesToFile(courses []string) error {
+func appendCoursesToFile(courses []CourseInfo) error {
 	file, err := os.OpenFile(configPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		return err
@@ -79,7 +91,8 @@ func appendCoursesToFile(courses []string) error {
 	defer file.Close()
 
 	for _, course := range courses {
-		_, err := file.WriteString(course + "\n")
+		line := fmt.Sprintf("%s,%s,%s\n", course.Name, course.URL, course.WebsiteType)
+		_, err := file.WriteString(line)
 		if err != nil {
 			return err
 		}
@@ -88,7 +101,7 @@ func appendCoursesToFile(courses []string) error {
 }
 
 // Overwrites the entire config file
-func overwriteCoursesToFile(courses []string) error {
+func overwriteCoursesToFile(courses []CourseInfo) error {
 	file, err := os.OpenFile(configPath, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		return err
@@ -96,7 +109,8 @@ func overwriteCoursesToFile(courses []string) error {
 	defer file.Close()
 
 	for _, course := range courses {
-		_, err := file.WriteString(course + "\n")
+		line := fmt.Sprintf("%s,%s,%s\n", course.Name, course.URL, course.WebsiteType)
+		_, err := file.WriteString(line)
 		if err != nil {
 			return err
 		}
@@ -108,11 +122,11 @@ var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Configure golf courses for TeeTimeFinder",
 	Run: func(cmd *cobra.Command, args []string) {
-		var courses []string
+		var newCourses []CourseInfo
 		reader := bufio.NewReader(os.Stdin)
 
 		// Load existing courses if not overwriting
-		existingCourses := map[string]string{}
+		existingCourses := make(map[string]CourseInfo)
 		if !overwrite {
 			existingCourses = loadExistingCourses()
 		}
@@ -133,9 +147,25 @@ var configCmd = &cobra.Command{
 			courseURL, _ := reader.ReadString('\n')
 			courseURL = strings.TrimSpace(courseURL)
 
+			// Get website type
+			var websiteType string
+			for {
+				fmt.Print("Enter the website type (MiClub or Quick18): ")
+				wtype, _ := reader.ReadString('\n')
+				wtype = strings.TrimSpace(wtype)
+
+				// Check if it's MiClub or Quick18 (case-insensitive)
+				if strings.EqualFold(wtype, "MiClub") || strings.EqualFold(wtype, "Quick18") {
+					websiteType = wtype
+					break
+				}
+
+				fmt.Println("Invalid website type. Please enter either 'MiClub' or 'Quick18'.")
+			}
+
 			// Validate course name and URL
-			if courseName == "" || courseURL == "" {
-				fmt.Println("Course name or URL cannot be empty. Please try again.")
+			if courseName == "" || courseURL == "" || websiteType == "" {
+				fmt.Println("Course name, URL or website type cannot be empty. Please try again.")
 				continue
 			}
 
@@ -146,13 +176,19 @@ var configCmd = &cobra.Command{
 			}
 
 			// Add the course if it's not a duplicate
-			courses = append(courses, fmt.Sprintf("%s,%s", courseName, courseURL))
-			existingCourses[courseURL] = courseName
+			course := CourseInfo{
+				Name:        courseName,
+				URL:         courseURL,
+				WebsiteType: websiteType,
+			}
+			newCourses = append(newCourses, course)
+			existingCourses[courseURL] = course
+
 			fmt.Printf("%s has been added.\n", courseName)
 		}
 
 		// No courses to add
-		if len(courses) == 0 {
+		if len(newCourses) == 0 {
 			fmt.Println("No courses were added.")
 			return
 		}
@@ -165,9 +201,9 @@ var configCmd = &cobra.Command{
 		// Either append or overwrite the file based on the -o flag
 		var err error
 		if overwrite {
-			err = overwriteCoursesToFile(courses)
+			err = overwriteCoursesToFile(newCourses)
 		} else {
-			err = appendCoursesToFile(courses)
+			err = appendCoursesToFile(newCourses)
 		}
 
 		if err != nil {
@@ -198,8 +234,8 @@ var configShowCmd = &cobra.Command{
 		fmt.Println("Configured Golf Courses:")
 		i := 1
 
-		for courseURL, courseName := range courses {
-			fmt.Printf("%d) %s - %s\n", i, courseName, courseURL)
+		for _, course := range courses {
+			fmt.Printf("%d) %s - %s - %s\n", i, course.Name, course.URL, course.WebsiteType)
 			i++
 		}
 	},
