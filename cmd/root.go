@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"TeeTimeFinder/pkg/scraper"
+	"TeeTimeFinder/pkg/miclub"
 	"bufio"
 	"fmt"
 	"os"
@@ -32,7 +32,7 @@ var verboseMode bool
 var courseList []string
 
 // Pre-scraped data structure to hold all times if a time filter is used
-var preScrapedTimes map[string]map[string]map[string][]scraper.Timeslot
+var preScrapedTimes map[string]map[string]map[string][]miclub.Timeslot
 
 var parenthesisRegex = regexp.MustCompile(`\(.+?\)`)
 var nineHoleRegex = regexp.MustCompile(`\b9\s*hole(s)?\b`)
@@ -275,16 +275,16 @@ func handleSpotsInput() (bool, error) {
 }
 
 // Function to pre-scrape all times if filters are specified
-func preScrapeAllTimes(gameToTimeslotURLs map[string]map[string]string, filterStartMinutes, filterEndMinutes, spots int) map[string]map[string]map[string][]scraper.Timeslot {
-	preScraped := make(map[string]map[string]map[string][]scraper.Timeslot)
+func preScrapeAllTimes(gameToTimeslotURLs map[string]map[string]string, filterStartMinutes, filterEndMinutes, spots int) map[string]map[string]map[string][]miclub.Timeslot {
+	preScraped := make(map[string]map[string]map[string][]miclub.Timeslot)
 	for game, courses := range gameToTimeslotURLs {
 		debugPrintf("Pre-scrape: Checking game '%s'\n", game)
 		if preScraped[game] == nil {
-			preScraped[game] = make(map[string]map[string][]scraper.Timeslot)
+			preScraped[game] = make(map[string]map[string][]miclub.Timeslot)
 		}
 		for course, timeslotURL := range courses {
 			debugPrintf("Pre-scrape: Scraping times for course '%s', URL: %s\n", course, timeslotURL)
-			availableTimes, err := scraper.ScrapeTimes(timeslotURL)
+			availableTimes, err := miclub.ScrapeTimes(timeslotURL)
 			if err != nil {
 				debugPrintf("Error scraping times for %s at %s: %v\n", game, course, err)
 				continue
@@ -298,7 +298,7 @@ func preScrapeAllTimes(gameToTimeslotURLs map[string]map[string]string, filterSt
 	return preScraped
 }
 
-func filterAvailableGamesAndCourses(standardGames, promoGames []string, gameToTimeslotURLs map[string]map[string]string, preScraped map[string]map[string]map[string][]scraper.Timeslot) ([]string, []string, map[string]map[string]string) {
+func filterAvailableGamesAndCourses(standardGames, promoGames []string, gameToTimeslotURLs map[string]map[string]string, preScraped map[string]map[string]map[string][]miclub.Timeslot) ([]string, []string, map[string]map[string]string) {
 	newStandard := []string{}
 	newPromo := []string{}
 
@@ -345,9 +345,9 @@ func filterAvailableGamesAndCourses(standardGames, promoGames []string, gameToTi
 	return newStandard, newPromo, gameToTimeslotURLs
 }
 
-func filterAndSortTimes(availableTimes map[string][]scraper.Timeslot, filterStartMinutes, filterEndMinutes, spots int) map[string][]scraper.Timeslot {
+func filterAndSortTimes(availableTimes map[string][]miclub.Timeslot, filterStartMinutes, filterEndMinutes, spots int) map[string][]miclub.Timeslot {
 	debugPrintf("filterAndSortTimes called with start=%d, end=%d, spots=%d\n", filterStartMinutes, filterEndMinutes, spots)
-	layoutTimes := make(map[string][]scraper.Timeslot)
+	layoutTimes := make(map[string][]miclub.Timeslot)
 	earliestTimes := make(map[string]int)
 
 	for layout, timeslots := range availableTimes {
@@ -385,7 +385,7 @@ func filterAndSortTimes(availableTimes map[string][]scraper.Timeslot, filterStar
 	return layoutTimes
 }
 
-func handleTimesDisplayPreScraped(layoutTimes map[string][]scraper.Timeslot, filterStartMinutes, filterEndMinutes, spots int) {
+func handleTimesDisplayPreScraped(layoutTimes map[string][]miclub.Timeslot, filterStartMinutes, filterEndMinutes, spots int) {
 	debugPrintf("handleTimesDisplayPreScraped called with layouts: %v\n", layoutTimes)
 	if len(layoutTimes) == 0 {
 		fmt.Println("No available times with the specified filters.")
@@ -394,7 +394,7 @@ func handleTimesDisplayPreScraped(layoutTimes map[string][]scraper.Timeslot, fil
 	displaySortedTimes(layoutTimes, sortLayoutsByEarliest(layoutTimes))
 }
 
-func sortLayoutsByEarliest(layoutTimes map[string][]scraper.Timeslot) []string {
+func sortLayoutsByEarliest(layoutTimes map[string][]miclub.Timeslot) []string {
 	earliestTimes := make(map[string]int)
 	for layout, times := range layoutTimes {
 		if len(times) > 0 {
@@ -416,7 +416,7 @@ func sortLayoutsByEarliest(layoutTimes map[string][]scraper.Timeslot) []string {
 
 func handleTimesDisplay(timeslotURL, selectedGame, selectedCourse string, filterStartMinutes, filterEndMinutes, spots int) {
 	debugPrintf("handleTimesDisplay for %s at %s, URL: %s\n", selectedGame, selectedCourse, timeslotURL)
-	availableTimes, err := scraper.ScrapeTimes(timeslotURL)
+	availableTimes, err := miclub.ScrapeTimes(timeslotURL)
 	if err != nil {
 		fmt.Printf("Failed to scrape times for %s at %s: %v\n", selectedGame, selectedCourse, err)
 		return
@@ -437,9 +437,9 @@ func handleTimesDisplay(timeslotURL, selectedGame, selectedCourse string, filter
 	displaySortedTimes(layoutTimes, sortedLayouts)
 }
 
-func sortTimesByLayoutAndSpots(availableTimes map[string][]scraper.Timeslot, filterStartMinutes, filterEndMinutes, spots int) ([]string, map[string][]scraper.Timeslot) {
+func sortTimesByLayoutAndSpots(availableTimes map[string][]miclub.Timeslot, filterStartMinutes, filterEndMinutes, spots int) ([]string, map[string][]miclub.Timeslot) {
 	debugPrintf("sortTimesByLayoutAndSpots called with availableTimes: %v\n", availableTimes)
-	layoutTimes := make(map[string][]scraper.Timeslot)
+	layoutTimes := make(map[string][]miclub.Timeslot)
 	earliestTimes := make(map[string]int)
 
 	for layout, timeslots := range availableTimes {
@@ -617,7 +617,7 @@ func scrapeCourseData(courses map[string]string, selectedDate time.Time) ([]stri
 
 	for courseName, url := range courses {
 		fmt.Printf("Scraping URL for course %s: %s\n", courseName, url)
-		gameTimeslotURLs, err := scraper.ScrapeDates(url, selectedDate)
+		gameTimeslotURLs, err := miclub.ScrapeDates(url, selectedDate)
 		if err != nil {
 			fmt.Printf("Failed to scrape %s: %v\n", courseName, err)
 			continue
@@ -786,8 +786,8 @@ func readChoice(options []string) string {
 	return options[choice-1]
 }
 
-func sortTimesByLayout(availableTimes map[string][]scraper.Timeslot, filterStartMinutes, filterEndMinutes int) ([]string, map[string][]scraper.Timeslot) {
-	layoutTimes := make(map[string][]scraper.Timeslot)
+func sortTimesByLayout(availableTimes map[string][]miclub.Timeslot, filterStartMinutes, filterEndMinutes int) ([]string, map[string][]miclub.Timeslot) {
+	layoutTimes := make(map[string][]miclub.Timeslot)
 	earliestTimes := make(map[string]int)
 
 	for layout, timeslots := range availableTimes {
@@ -827,7 +827,7 @@ func sortTimesByLayout(availableTimes map[string][]scraper.Timeslot, filterStart
 	return sortedLayouts, layoutTimes
 }
 
-func displaySortedTimes(layoutTimes map[string][]scraper.Timeslot, sortedLayouts []string) {
+func displaySortedTimes(layoutTimes map[string][]miclub.Timeslot, sortedLayouts []string) {
 	fmt.Println("Available times:")
 	for _, layout := range sortedLayouts {
 		fmt.Printf("\n%s:\n", layout)
