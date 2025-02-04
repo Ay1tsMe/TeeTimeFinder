@@ -14,6 +14,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// CourseConfig holds each course's URL and website type.
+type CourseConfig struct {
+	URL         string
+	WebsiteType string
+}
+
 var allowedStandardModifiers = map[string]bool{
 	"walking":  true,
 	"midweek":  true,
@@ -106,19 +112,19 @@ func runScraper(args []string) {
 	}
 	debugPrintf("Loaded courses: %+v\n", courses)
 
-	var filtered map[string]string
+	var filtered map[string]CourseConfig
 	// We now check if the user provided any courses with the -c flag by checking courseList
 	if len(courseList) > 0 {
 		// The user specified one or more courses
-		filtered = make(map[string]string)
+		filtered = make(map[string]CourseConfig)
 		for _, cName := range courseList {
 			cName = strings.TrimSpace(cName)
-			url, exists := courses[cName]
+			cConfig, exists := courses[cName]
 			if !exists {
 				fmt.Printf("Error: Course '%s' does not exist in config.\n", cName)
 				return
 			}
-			filtered[cName] = url
+			filtered[cName] = cConfig
 		}
 		courses = filtered
 	} else {
@@ -127,7 +133,7 @@ func runScraper(args []string) {
 		choice := strings.TrimSpace(readInput())
 
 		if strings.ToLower(choice) == "specify" {
-			filtered = make(map[string]string)
+			filtered = make(map[string]CourseConfig)
 			fmt.Println("Enter course names line by line. Type 'done' when finished:")
 			for {
 				fmt.Print("Course Name: ")
@@ -140,12 +146,12 @@ func runScraper(args []string) {
 					continue
 				}
 
-				url, exists := courses[cName]
+				cConfig, exists := courses[cName]
 				if !exists {
 					fmt.Printf("Error: Course '%s' does not exist in config.\n", cName)
 					return
 				}
-				filtered[cName] = url
+				filtered[cName] = cConfig
 			}
 
 			if len(filtered) == 0 {
@@ -485,8 +491,8 @@ func sortTimesByLayoutAndSpots(availableTimes map[string][]miclub.Timeslot, filt
 	return sortedLayouts, layoutTimes
 }
 
-func loadCourses() (map[string]string, error) {
-	courses := make(map[string]string)
+func loadCourses() (map[string]CourseConfig, error) {
+	courses := make(map[string]CourseConfig)
 	file, err := os.Open(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open config file: %w", err)
@@ -499,11 +505,16 @@ func loadCourses() (map[string]string, error) {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, ",", 2)
-		if len(parts) == 2 {
+		parts := strings.SplitN(line, ",", 3)
+		if len(parts) == 3 {
 			courseName := strings.TrimSpace(parts[0])
 			courseURL := strings.TrimSpace(parts[1])
-			courses[courseName] = courseURL
+			websiteType := strings.TrimSpace(parts[2])
+
+			courses[courseName] = CourseConfig{
+				URL:         courseURL,
+				WebsiteType: websiteType,
+			}
 		}
 	}
 
@@ -611,13 +622,31 @@ func parseTimeToMinutes24(timeStr string) (int, error) {
 	return t.Hour()*60 + t.Minute(), nil
 }
 
-func scrapeCourseData(courses map[string]string, selectedDate time.Time) ([]string, []string, map[string]map[string]string) {
+func scrapeCourseData(courses map[string]CourseConfig, selectedDate time.Time) ([]string, []string, map[string]map[string]string) {
 	var standardGames, promoGames []string
 	gameToTimeslotURLs := make(map[string]map[string]string)
 
-	for courseName, url := range courses {
-		fmt.Printf("Scraping URL for course %s: %s\n", courseName, url)
-		gameTimeslotURLs, err := miclub.ScrapeDates(url, selectedDate)
+	for courseName, cfg := range courses {
+		fmt.Printf("Scraping URL for course %s: %s\n", courseName, cfg.URL)
+
+		var (
+			gameTimeslotURLs map[string]string
+			err              error
+		)
+
+		// Branch based on website type
+		if strings.EqualFold(cfg.WebsiteType, "miclub") {
+			gameTimeslotURLs, err = miclub.ScrapeDates(cfg.URL, selectedDate)
+		} else if strings.EqualFold(cfg.WebsiteType, "quick18") {
+			// Placeholder logic for quick18
+			// gameTimeslotURLs, err = quick18.ScrapeDates(cfg.URL, selectedDate)
+			fmt.Println("Quick18 support not implemented yet... Skipping")
+			continue
+		} else {
+			fmt.Printf("Unknown website type '%s' for course '%s'. Skipping.\n", cfg.WebsiteType, courseName)
+			continue
+		}
+
 		if err != nil {
 			fmt.Printf("Failed to scrape %s: %v\n", courseName, err)
 			continue
