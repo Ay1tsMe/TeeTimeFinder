@@ -7,13 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"TeeTimeFinder/pkg/shared"
+
 	"github.com/gocolly/colly"
 )
-
-type Timeslot struct {
-	Time           string
-	AvailableSpots int
-}
 
 // Scrapes the date URL and returns a map of games and their corresponding timeslot URLs
 func ScrapeDates(baseURL string, selectedDate time.Time) (map[string]string, error) {
@@ -100,7 +97,7 @@ func ScrapeDates(baseURL string, selectedDate time.Time) (map[string]string, err
 	return rowNameToTimeslotURL, nil
 }
 
-func ScrapeTimes(url string) (map[string][]Timeslot, error) {
+func ScrapeTimes(url string) (map[string][]shared.TeeTimeSlot, error) {
 	c := colly.NewCollector(
 		colly.Async(true),
 		colly.MaxDepth(1),
@@ -114,7 +111,7 @@ func ScrapeTimes(url string) (map[string][]Timeslot, error) {
 	})
 
 	// Stores the available times
-	layoutToTimes := make(map[string][]Timeslot)
+	layoutToTimes := make(map[string][]shared.TeeTimeSlot)
 
 	c.OnHTML("div.row-time", func(e *colly.HTMLElement) {
 
@@ -134,7 +131,7 @@ func ScrapeTimes(url string) (map[string][]Timeslot, error) {
 
 		// Only include times with available slots
 		if availableSlots > 0 {
-			timeSlot := Timeslot{
+			timeSlot := shared.TeeTimeSlot{
 				Time:           time,
 				AvailableSpots: availableSlots,
 			}

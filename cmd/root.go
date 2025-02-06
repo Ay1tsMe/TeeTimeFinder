@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"TeeTimeFinder/pkg/miclub"
+	"TeeTimeFinder/pkg/quick18"
+	"TeeTimeFinder/pkg/shared"
 	"bufio"
 	"fmt"
 	"os"
@@ -38,7 +40,7 @@ var verboseMode bool
 var courseList []string
 
 // Pre-scraped data structure to hold all times if a time filter is used
-var preScrapedTimes map[string]map[string]map[string][]miclub.Timeslot
+var preScrapedTimes map[string]map[string]map[string][]shared.TeeTimeSlot
 
 var parenthesisRegex = regexp.MustCompile(`\(.+?\)`)
 var nineHoleRegex = regexp.MustCompile(`\b9\s*hole(s)?\b`)
@@ -204,7 +206,7 @@ func runScraper(args []string) {
 	if timeFilterUsed || spotsFilterUsed {
 		fmt.Println("Filters specified. Searching all courses for available timeslots within the specified range. This can take some time, Please wait...")
 		debugPrintln("Pre-scraping all times due to filters.")
-		preScrapedTimes = preScrapeAllTimes(gameToTimeslotURLs, filterStartMinutes, filterEndMinutes, specifiedSpots)
+		preScrapedTimes = preScrapeAllTimes(gameToTimeslotURLs, filterStartMinutes, filterEndMinutes, specifiedSpots, courses)
 
 		debugPrintln("Filtering available games and courses after pre-scrape.")
 		standardGames, promoGames, gameToTimeslotURLs = filterAvailableGamesAndCourses(standardGames, promoGames, gameToTimeslotURLs, preScrapedTimes)
@@ -237,7 +239,7 @@ func runScraper(args []string) {
 		if timeFilterUsed || spotsFilterUsed {
 			handleTimesDisplayPreScraped(preScrapedTimes[selectedGame][selectedCourse], filterStartMinutes, filterEndMinutes, specifiedSpots)
 		} else {
-			handleTimesDisplay(timeslotURL, selectedGame, selectedCourse, filterStartMinutes, filterEndMinutes, specifiedSpots)
+			handleTimesDisplay(timeslotURL, selectedGame, selectedCourse, filterStartMinutes, filterEndMinutes, specifiedSpots, courses)
 		}
 
 		// Ask user if they want to book this game
@@ -281,30 +283,41 @@ func handleSpotsInput() (bool, error) {
 }
 
 // Function to pre-scrape all times if filters are specified
-func preScrapeAllTimes(gameToTimeslotURLs map[string]map[string]string, filterStartMinutes, filterEndMinutes, spots int) map[string]map[string]map[string][]miclub.Timeslot {
-	preScraped := make(map[string]map[string]map[string][]miclub.Timeslot)
-	for game, courses := range gameToTimeslotURLs {
+func preScrapeAllTimes(gameToTimeslotURLs map[string]map[string]string, filterStartMinutes, filterEndMinutes, spots int, courses map[string]CourseConfig) map[string]map[string]map[string][]shared.TeeTimeSlot {
+	preScraped := make(map[string]map[string]map[string][]shared.TeeTimeSlot)
+	for game, courseMap := range gameToTimeslotURLs {
 		debugPrintf("Pre-scrape: Checking game '%s'\n", game)
 		if preScraped[game] == nil {
-			preScraped[game] = make(map[string]map[string][]miclub.Timeslot)
+			preScraped[game] = make(map[string]map[string][]shared.TeeTimeSlot)
 		}
-		for course, timeslotURL := range courses {
-			debugPrintf("Pre-scrape: Scraping times for course '%s', URL: %s\n", course, timeslotURL)
-			availableTimes, err := miclub.ScrapeTimes(timeslotURL)
+		for courseName, timeslotURL := range courseMap {
+			debugPrintf("Pre-scrape: Scraping times for course '%s', URL: %s\n", courseName, timeslotURL)
+
+			var availableTimes map[string][]shared.TeeTimeSlot
+			var err error
+
+			if strings.EqualFold(courses[courseName].WebsiteType, "miclub") {
+				availableTimes, err = miclub.ScrapeTimes(timeslotURL)
+			} else if strings.EqualFold(courses[courseName].WebsiteType, "quick18") {
+				qTimes, e := quick18.ScrapeTimes(timeslotURL)
+				err = e
+				availableTimes = qTimes
+			}
+
 			if err != nil {
-				debugPrintf("Error scraping times for %s at %s: %v\n", game, course, err)
+				debugPrintf("Error scraping times for %s at %s: %v\n", game, courseName, err)
 				continue
 			}
 
 			filteredTimes := filterAndSortTimes(availableTimes, filterStartMinutes, filterEndMinutes, spots)
-			debugPrintf("Pre-scrape: '%s' at '%s' after filtering: %+v\n", game, course, filteredTimes)
-			preScraped[game][course] = filteredTimes
+			debugPrintf("Pre-scrape: '%s' at '%s' after filtering: %+v\n", game, courseName, filteredTimes)
+			preScraped[game][courseName] = filteredTimes
 		}
 	}
 	return preScraped
 }
 
-func filterAvailableGamesAndCourses(standardGames, promoGames []string, gameToTimeslotURLs map[string]map[string]string, preScraped map[string]map[string]map[string][]miclub.Timeslot) ([]string, []string, map[string]map[string]string) {
+func filterAvailableGamesAndCourses(standardGames, promoGames []string, gameToTimeslotURLs map[string]map[string]string, preScraped map[string]map[string]map[string][]shared.TeeTimeSlot) ([]string, []string, map[string]map[string]string) {
 	newStandard := []string{}
 	newPromo := []string{}
 
@@ -351,9 +364,9 @@ func filterAvailableGamesAndCourses(standardGames, promoGames []string, gameToTi
 	return newStandard, newPromo, gameToTimeslotURLs
 }
 
-func filterAndSortTimes(availableTimes map[string][]miclub.Timeslot, filterStartMinutes, filterEndMinutes, spots int) map[string][]miclub.Timeslot {
+func filterAndSortTimes(availableTimes map[string][]shared.TeeTimeSlot, filterStartMinutes, filterEndMinutes, spots int) map[string][]shared.TeeTimeSlot {
 	debugPrintf("filterAndSortTimes called with start=%d, end=%d, spots=%d\n", filterStartMinutes, filterEndMinutes, spots)
-	layoutTimes := make(map[string][]miclub.Timeslot)
+	layoutTimes := make(map[string][]shared.TeeTimeSlot)
 	earliestTimes := make(map[string]int)
 
 	for layout, timeslots := range availableTimes {
@@ -391,7 +404,7 @@ func filterAndSortTimes(availableTimes map[string][]miclub.Timeslot, filterStart
 	return layoutTimes
 }
 
-func handleTimesDisplayPreScraped(layoutTimes map[string][]miclub.Timeslot, filterStartMinutes, filterEndMinutes, spots int) {
+func handleTimesDisplayPreScraped(layoutTimes map[string][]shared.TeeTimeSlot, filterStartMinutes, filterEndMinutes, spots int) {
 	debugPrintf("handleTimesDisplayPreScraped called with layouts: %v\n", layoutTimes)
 	if len(layoutTimes) == 0 {
 		fmt.Println("No available times with the specified filters.")
@@ -400,7 +413,7 @@ func handleTimesDisplayPreScraped(layoutTimes map[string][]miclub.Timeslot, filt
 	displaySortedTimes(layoutTimes, sortLayoutsByEarliest(layoutTimes))
 }
 
-func sortLayoutsByEarliest(layoutTimes map[string][]miclub.Timeslot) []string {
+func sortLayoutsByEarliest(layoutTimes map[string][]shared.TeeTimeSlot) []string {
 	earliestTimes := make(map[string]int)
 	for layout, times := range layoutTimes {
 		if len(times) > 0 {
@@ -420,9 +433,21 @@ func sortLayoutsByEarliest(layoutTimes map[string][]miclub.Timeslot) []string {
 	return sortedLayouts
 }
 
-func handleTimesDisplay(timeslotURL, selectedGame, selectedCourse string, filterStartMinutes, filterEndMinutes, spots int) {
+func handleTimesDisplay(timeslotURL, selectedGame, selectedCourse string, filterStartMinutes, filterEndMinutes, spots int, courses map[string]CourseConfig) {
 	debugPrintf("handleTimesDisplay for %s at %s, URL: %s\n", selectedGame, selectedCourse, timeslotURL)
-	availableTimes, err := miclub.ScrapeTimes(timeslotURL)
+
+	var availableTimes map[string][]shared.TeeTimeSlot
+	var err error
+
+	if strings.EqualFold(courses[selectedCourse].WebsiteType, "miclub") {
+		availableTimes, err = miclub.ScrapeTimes(timeslotURL)
+
+	} else if strings.EqualFold(courses[selectedCourse].WebsiteType, "quick18") {
+		qTimes, e := quick18.ScrapeTimes(timeslotURL)
+		err = e
+		availableTimes = qTimes
+	}
+
 	if err != nil {
 		fmt.Printf("Failed to scrape times for %s at %s: %v\n", selectedGame, selectedCourse, err)
 		return
@@ -443,9 +468,9 @@ func handleTimesDisplay(timeslotURL, selectedGame, selectedCourse string, filter
 	displaySortedTimes(layoutTimes, sortedLayouts)
 }
 
-func sortTimesByLayoutAndSpots(availableTimes map[string][]miclub.Timeslot, filterStartMinutes, filterEndMinutes, spots int) ([]string, map[string][]miclub.Timeslot) {
+func sortTimesByLayoutAndSpots(availableTimes map[string][]shared.TeeTimeSlot, filterStartMinutes, filterEndMinutes, spots int) ([]string, map[string][]shared.TeeTimeSlot) {
 	debugPrintf("sortTimesByLayoutAndSpots called with availableTimes: %v\n", availableTimes)
-	layoutTimes := make(map[string][]miclub.Timeslot)
+	layoutTimes := make(map[string][]shared.TeeTimeSlot)
 	earliestTimes := make(map[string]int)
 
 	for layout, timeslots := range availableTimes {
@@ -640,8 +665,8 @@ func scrapeCourseData(courses map[string]CourseConfig, selectedDate time.Time) (
 		} else if strings.EqualFold(cfg.WebsiteType, "quick18") {
 			// Placeholder logic for quick18
 			// gameTimeslotURLs, err = quick18.ScrapeDates(cfg.URL, selectedDate)
-			fmt.Println("Quick18 support not implemented yet... Skipping")
-			continue
+			//fmt.Println("Quick18 support not implemented yet... Skipping")
+			gameTimeslotURLs, err = quick18.ScrapeDates(cfg.URL, selectedDate)
 		} else {
 			fmt.Printf("Unknown website type '%s' for course '%s'. Skipping.\n", cfg.WebsiteType, courseName)
 			continue
@@ -815,8 +840,8 @@ func readChoice(options []string) string {
 	return options[choice-1]
 }
 
-func sortTimesByLayout(availableTimes map[string][]miclub.Timeslot, filterStartMinutes, filterEndMinutes int) ([]string, map[string][]miclub.Timeslot) {
-	layoutTimes := make(map[string][]miclub.Timeslot)
+func sortTimesByLayout(availableTimes map[string][]shared.TeeTimeSlot, filterStartMinutes, filterEndMinutes int) ([]string, map[string][]shared.TeeTimeSlot) {
+	layoutTimes := make(map[string][]shared.TeeTimeSlot)
 	earliestTimes := make(map[string]int)
 
 	for layout, timeslots := range availableTimes {
@@ -856,7 +881,7 @@ func sortTimesByLayout(availableTimes map[string][]miclub.Timeslot, filterStartM
 	return sortedLayouts, layoutTimes
 }
 
-func displaySortedTimes(layoutTimes map[string][]miclub.Timeslot, sortedLayouts []string) {
+func displaySortedTimes(layoutTimes map[string][]shared.TeeTimeSlot, sortedLayouts []string) {
 	fmt.Println("Available times:")
 	for _, layout := range sortedLayouts {
 		fmt.Printf("\n%s:\n", layout)
