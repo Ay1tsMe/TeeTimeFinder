@@ -45,6 +45,7 @@ var preScrapedTimes map[string]map[string]map[string][]shared.TeeTimeSlot
 var parenthesisRegex = regexp.MustCompile(`\(.+?\)`)
 var nineHoleRegex = regexp.MustCompile(`\b9\s*hole(s)?\b`)
 var eighteenHoleRegex = regexp.MustCompile(`\b18\s*hole(s)?\b`)
+var reSpaceAMPMRegex = regexp.MustCompile(`(\d+:\d+)(AM|PM)\b`)
 
 var rootCmd = &cobra.Command{
 	Use:   "TeeTimeFinder",
@@ -628,7 +629,15 @@ func handleTimeInput() (int, int, error) {
 
 func parseTimeToMinutes(timeStr string) (int, error) {
 	timeStr = strings.TrimSpace(strings.ToUpper(timeStr))
-	layouts := []string{"03:04 PM", "3:04 PM"}
+
+	timeStr = strings.ReplaceAll(timeStr, "AM", " AM")
+	timeStr = strings.ReplaceAll(timeStr, "PM", " PM")
+
+	layouts := []string{
+		"03:04 PM",
+		"3:04 PM",
+	}
+
 	for _, layout := range layouts {
 		t, err := time.Parse(layout, timeStr)
 		if err == nil {
@@ -645,6 +654,25 @@ func parseTimeToMinutes24(timeStr string) (int, error) {
 		return 0, err
 	}
 	return t.Hour()*60 + t.Minute(), nil
+}
+
+func formatMinutesAs12Hour(totalMins int) string {
+	hour := totalMins / 60   // 0..23
+	minute := totalMins % 60 // 0..59
+
+	suffix := "AM"
+	if hour >= 12 {
+		suffix = "PM"
+	}
+
+	// Convert 24h hour to 12h hour (1..12)
+	hour12 := hour % 12
+	if hour12 == 0 {
+		hour12 = 12
+	}
+
+	// Example output: "03:07 PM"
+	return fmt.Sprintf("%02d:%02d %s", hour12, minute, suffix)
 }
 
 func scrapeCourseData(courses map[string]CourseConfig, selectedDate time.Time) ([]string, []string, map[string]map[string]string) {
@@ -886,7 +914,9 @@ func displaySortedTimes(layoutTimes map[string][]shared.TeeTimeSlot, sortedLayou
 	for _, layout := range sortedLayouts {
 		fmt.Printf("\n%s:\n", layout)
 		for _, timeSlot := range layoutTimes[layout] {
-			fmt.Printf("%s: %d spots available\n", timeSlot.Time, timeSlot.AvailableSpots)
+			prettyTime := reSpaceAMPMRegex.ReplaceAllString(timeSlot.Time, "$1 $2")
+
+			fmt.Printf("%s: %d spots available\n", prettyTime, timeSlot.AvailableSpots)
 		}
 	}
 }
