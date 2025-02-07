@@ -11,6 +11,7 @@ import (
 
 	"TeeTimeFinder/pkg/shared"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly"
 )
 
@@ -48,18 +49,38 @@ func ScrapeDates(baseURL string, selectedDate time.Time) (map[string]string, err
 		Delay:       1 * time.Second,
 	})
 
-	gameMap := make(map[string]string)
-
 	// Load the page, look for all <th class="matrixHdrSched">, which are the “game type” columns
+	var schedHeaders []string
 	c.OnHTML("table.matrixTable thead tr", func(h *colly.HTMLElement) {
 		h.ForEach("th.matrixHdrSched", func(_ int, th *colly.HTMLElement) {
 			gameName := strings.TrimSpace(th.Text) // e.g. "9 Holes"
-			if gameName == "" {
+			if gameName != "" {
+				schedHeaders = append(schedHeaders, gameName)
+			}
+		})
+	})
+
+	var columnHasAvailability []bool
+
+	// Check the row in <tbody>
+	c.OnHTML("table.matrixTable tbody tr", func(e *colly.HTMLElement) {
+		// Find all .matrixsched cells in this row:
+		tdList := e.DOM.Find("td.matrixsched")
+		if columnHasAvailability == nil {
+			// Initialise the slice once we know how many columns
+			columnHasAvailability = make([]bool, tdList.Length())
+		}
+
+		// For each column index i, see if it’s active (.mtrxInactive? no) and has a “Select” link
+		tdList.Each(func(i int, sel *goquery.Selection) {
+			if sel.HasClass("mtrxInactive") {
 				return
 			}
-			// Store each header as a separate “game” => same finalURL
-			// Because Quick18 does not provide a separate URL per column
-			gameMap[gameName] = finalURL
+			selectLinkCount := sel.Find("a.sexybutton.teebutton").Length()
+			if selectLinkCount > 0 {
+				// This column i has at least one real available time
+				columnHasAvailability[i] = true
+			}
 		})
 	})
 
@@ -71,6 +92,13 @@ func ScrapeDates(baseURL string, selectedDate time.Time) (map[string]string, err
 		return nil, fmt.Errorf("failed to fetch Quick18 date page: %v", err)
 	}
 	c.Wait()
+
+	gameMap := make(map[string]string)
+	for i, header := range schedHeaders {
+		if i < len(columnHasAvailability) && columnHasAvailability[i] {
+			gameMap[header] = finalURL
+		}
+	}
 
 	// If no headers were found, fall back to single "All Tee Times"
 	if len(gameMap) == 0 {
@@ -100,7 +128,7 @@ func ScrapeTimes(url string) (map[string][]shared.TeeTimeSlot, error) {
 	c.OnHTML("table.matrixTable tbody tr", func(e *colly.HTMLElement) {
 		// Extract time from the "td.mtrxTeeTimes" cell.
 		rawTime := strings.TrimSpace(e.ChildText("td.mtrxTeeTimes"))
-		// Typically something like "2:30\nPM" -> we can normalize:
+		// Typically something like "2:30\nPM" -> we can normalise:
 		timeStr := parseTimeCell(rawTime)
 
 		// Extract layout (e.g. "9 Holes" or "18 Holes (Double Loop)")
