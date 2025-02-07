@@ -36,11 +36,48 @@ func ScrapeDates(baseURL string, selectedDate time.Time) (map[string]string, err
 
 	finalURL := parsed.String()
 
-	// Return a single "game" -> URL in the map
-	m := make(map[string]string)
-	m["All Tee Times"] = finalURL
+	c := colly.NewCollector(
+		colly.Async(true),
+		colly.MaxDepth(1),
+	)
 
-	return m, nil
+	// Implement rate limiting
+	c.Limit(&colly.LimitRule{
+		DomainGlob:  "*",
+		Parallelism: 2,
+		Delay:       1 * time.Second,
+	})
+
+	gameMap := make(map[string]string)
+
+	// Load the page, look for all <th class="matrixHdrSched">, which are the “game type” columns
+	c.OnHTML("table.matrixTable thead tr", func(h *colly.HTMLElement) {
+		h.ForEach("th.matrixHdrSched", func(_ int, th *colly.HTMLElement) {
+			gameName := strings.TrimSpace(th.Text) // e.g. "9 Holes"
+			if gameName == "" {
+				return
+			}
+			// Store each header as a separate “game” => same finalURL
+			// Because Quick18 does not provide a separate URL per column
+			gameMap[gameName] = finalURL
+		})
+	})
+
+	c.OnError(func(_ *colly.Response, err error) {
+		log.Println("[Quick18] ScrapeDates error:", err)
+	})
+
+	if err := c.Visit(finalURL); err != nil {
+		return nil, fmt.Errorf("failed to fetch Quick18 date page: %v", err)
+	}
+	c.Wait()
+
+	// If no headers were found, fall back to single "All Tee Times"
+	if len(gameMap) == 0 {
+		gameMap["All Tee Times"] = finalURL
+	}
+
+	return gameMap, nil
 }
 
 // ScrapeTimes visits the Quick18 "matrixTable" page and extracts timeslots
