@@ -302,6 +302,15 @@ func preScrapeAllTimes(gameToTimeslotURLs map[string]map[string]string, filterSt
 			} else if strings.EqualFold(courses[courseName].WebsiteType, "quick18") {
 				qTimes, e := quick18.ScrapeTimes(timeslotURL)
 				err = e
+
+				if err == nil {
+					filtered := make(map[string][]shared.TeeTimeSlot)
+					if colTimes, ok := qTimes[game]; ok {
+						filtered[game] = colTimes
+					}
+					qTimes = filtered
+				}
+
 				availableTimes = qTimes
 			}
 
@@ -411,7 +420,7 @@ func handleTimesDisplayPreScraped(layoutTimes map[string][]shared.TeeTimeSlot, f
 
 	// Filter out columns not matching the user's chosen selectedGame
 	if strings.EqualFold(courses[selectedCourse].WebsiteType, "quick18") {
-		filteredMap := map[string][]shared.TeeTimeSlot{}
+		filteredMap := make(map[string][]shared.TeeTimeSlot)
 		if timesForGame, ok := layoutTimes[selectedGame]; ok {
 			filteredMap[selectedGame] = timesForGame
 		}
