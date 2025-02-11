@@ -241,7 +241,7 @@ var configShowCmd = &cobra.Command{
 	},
 }
 
-// Initializes the command and adds the -overwrite flag
+// Initialises the command and adds the -overwrite flag
 func init() {
 	rootCmd.AddCommand(configCmd)
 	configCmd.Flags().BoolVarP(&overwrite, "overwrite", "o", false, "Overwrite the existing config")
