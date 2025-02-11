@@ -109,66 +109,81 @@ func ScrapeDates(baseURL string, selectedDate time.Time) (map[string]string, err
 }
 
 // ScrapeTimes visits the Quick18 "matrixTable" page and extracts timeslots
-// grouped by "layout" (the course column).
 func ScrapeTimes(url string) (map[string][]shared.TeeTimeSlot, error) {
 	c := colly.NewCollector(
 		colly.Async(true),
 		colly.MaxDepth(1),
 	)
 
-	// Implement rate limiting
+	// Rate limiting, etc.
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
 		Parallelism: 2,
 		Delay:       1 * time.Second,
 	})
 
-	layoutToTimes := make(map[string][]shared.TeeTimeSlot)
+	// 1) Grab all the column headers (e.g. "9 Holes", "18 Holes", etc.)
+	var columnHeaders []string
+	c.OnHTML("table.matrixTable thead tr", func(h *colly.HTMLElement) {
+		h.ForEach("th.matrixHdrSched", func(_ int, th *colly.HTMLElement) {
+			headerText := strings.TrimSpace(th.Text)
+			if headerText != "" {
+				columnHeaders = append(columnHeaders, headerText)
+			}
+		})
+	})
 
+	// 2) Prepare a map from “header text” -> slice of tee times.
+	headerToTimes := make(map[string][]shared.TeeTimeSlot)
+
+	// 3) For each body row, parse the time, players, and each sched cell.
 	c.OnHTML("table.matrixTable tbody tr", func(e *colly.HTMLElement) {
-		// Extract time from the "td.mtrxTeeTimes" cell.
+		// Time cell
 		rawTime := strings.TrimSpace(e.ChildText("td.mtrxTeeTimes"))
-		// Typically something like "2:30\nPM" -> we can normalise:
 		timeStr := parseTimeCell(rawTime)
 
-		// Extract layout (e.g. "9 Holes" or "18 Holes (Double Loop)")
-		layout := strings.TrimSpace(e.ChildText("td.mtrxCourse"))
-		if layout == "" {
-			// skip row
-			return
-		}
-
-		// Extract the "matrixPlayers" cell for player range
+		// Players cell
 		playerCell := strings.TrimSpace(e.ChildText("td.matrixPlayers"))
 		availableSpots := parsePlayers(playerCell)
 
-		// Check if there's at least one active "select" link in a .matrixsched cell
-		// that is not .mtrxInactive:
-		selectLinks := e.ChildAttrs("td.matrixsched:not(.mtrxInactive) a.sexybutton.teebutton", "href")
-		if len(selectLinks) == 0 {
-			// No active "Select" => row is unavailable
-			return
-		}
+		// The “sched” cells (one per header)
+		schedCells := e.DOM.Find("td.matrixsched")
+		schedCells.Each(func(i int, sel *goquery.Selection) {
+			// Make sure we don’t run past columnHeaders
+			if i >= len(columnHeaders) {
+				return
+			}
+			header := columnHeaders[i] // e.g. "9 Holes", "18 Holes", etc.
 
-		// We consider it an available timeslot.
-		timeslot := shared.TeeTimeSlot{
-			Time:           timeStr,
-			AvailableSpots: availableSpots,
-		}
-		layoutToTimes[layout] = append(layoutToTimes[layout], timeslot)
+			// Skip if it’s inactive
+			if sel.HasClass("mtrxInactive") {
+				return
+			}
+			// Does this cell have a "Select" link?
+			linkCount := sel.Find("a.sexybutton.teebutton").Length()
+			if linkCount == 0 {
+				return
+			}
+
+			// If we reach here, it's an available slot for that header.
+			slot := shared.TeeTimeSlot{
+				Time:           timeStr,
+				AvailableSpots: availableSpots,
+			}
+			headerToTimes[header] = append(headerToTimes[header], slot)
+		})
 	})
 
+	// Handle errors and visit
 	c.OnError(func(_ *colly.Response, err error) {
 		log.Println("[Quick18] Error:", err)
 	})
-
-	err := c.Visit(url)
-	if err != nil {
+	if err := c.Visit(url); err != nil {
 		return nil, fmt.Errorf("failed to visit Quick18 URL %s: %v", url, err)
 	}
-
 	c.Wait()
-	return layoutToTimes, nil
+
+	return headerToTimes, nil
 }
 
 // parseTimeCell merges something like "2:30\nPM" into "2:30 PM"

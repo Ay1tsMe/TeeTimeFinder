@@ -459,6 +459,15 @@ func handleTimesDisplay(timeslotURL, selectedGame, selectedCourse string, filter
 		return
 	}
 
+	// Filter out columns not matching the user's chosen selectedGame
+	if strings.EqualFold(courses[selectedCourse].WebsiteType, "quick18") {
+		filteredMap := map[string][]shared.TeeTimeSlot{}
+		if timesForGame, ok := availableTimes[selectedGame]; ok {
+			filteredMap[selectedGame] = timesForGame
+		}
+		availableTimes = filteredMap
+	}
+
 	sortedLayouts, layoutTimes := sortTimesByLayoutAndSpots(availableTimes, filterStartMinutes, filterEndMinutes, spots)
 
 	if len(sortedLayouts) == 0 {
