@@ -238,7 +238,7 @@ func runScraper(args []string) {
 
 		debugPrintf("Displaying times. timeFilterUsed: %v, spotsFilterUsed: %v\n", timeFilterUsed, spotsFilterUsed)
 		if timeFilterUsed || spotsFilterUsed {
-			handleTimesDisplayPreScraped(preScrapedTimes[selectedGame][selectedCourse], filterStartMinutes, filterEndMinutes, specifiedSpots)
+			handleTimesDisplayPreScraped(preScrapedTimes[selectedGame][selectedCourse], filterStartMinutes, filterEndMinutes, specifiedSpots, selectedGame, selectedCourse, courses)
 		} else {
 			handleTimesDisplay(timeslotURL, selectedGame, selectedCourse, filterStartMinutes, filterEndMinutes, specifiedSpots, courses)
 		}
@@ -405,8 +405,19 @@ func filterAndSortTimes(availableTimes map[string][]shared.TeeTimeSlot, filterSt
 	return layoutTimes
 }
 
-func handleTimesDisplayPreScraped(layoutTimes map[string][]shared.TeeTimeSlot, filterStartMinutes, filterEndMinutes, spots int) {
+func handleTimesDisplayPreScraped(layoutTimes map[string][]shared.TeeTimeSlot, filterStartMinutes, filterEndMinutes, spots int, selectedGame string, selectedCourse string, courses map[string]CourseConfig) {
+
 	debugPrintf("handleTimesDisplayPreScraped called with layouts: %v\n", layoutTimes)
+
+	// Filter out columns not matching the user's chosen selectedGame
+	if strings.EqualFold(courses[selectedCourse].WebsiteType, "quick18") {
+		filteredMap := map[string][]shared.TeeTimeSlot{}
+		if timesForGame, ok := layoutTimes[selectedGame]; ok {
+			filteredMap[selectedGame] = timesForGame
+		}
+		layoutTimes = filteredMap
+	}
+
 	if len(layoutTimes) == 0 {
 		fmt.Println("No available times with the specified filters.")
 		return

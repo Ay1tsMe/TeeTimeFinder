@@ -15,6 +15,23 @@ import (
 	"github.com/gocolly/colly"
 )
 
+// Duplicate declarations.
+// TODO Remove in the future
+var parenthesisRegex = regexp.MustCompile(`\(.+?\)`)
+var nineHoleRegex = regexp.MustCompile(`\b9\s*hole(s)?\b`)
+var eighteenHoleRegex = regexp.MustCompile(`\b18\s*hole(s)?\b`)
+var reSpaceAMPMRegex = regexp.MustCompile(`(\d+:\d+)(AM|PM)\b`)
+
+var allowedStandardModifiers = map[string]bool{
+	"walking":  true,
+	"midweek":  true,
+	"carts":    true, // if "carts can be added" was inside parentheses, it’s already removed, but "carts" alone might remain
+	"can":      true,
+	"be":       true,
+	"added":    true,
+	"maylands": true,
+}
+
 type Timeslot struct {
 	Time           string
 	AvailableSpots int
@@ -128,7 +145,8 @@ func ScrapeTimes(url string) (map[string][]shared.TeeTimeSlot, error) {
 		h.ForEach("th.matrixHdrSched", func(_ int, th *colly.HTMLElement) {
 			headerText := strings.TrimSpace(th.Text)
 			if headerText != "" {
-				columnHeaders = append(columnHeaders, headerText)
+				normalise := normaliseGameName(headerText)
+				columnHeaders = append(columnHeaders, normalise)
 			}
 		})
 	})
@@ -214,4 +232,71 @@ func parsePlayers(cellText string) int {
 
 	// If no match, default to 1
 	return 1
+}
+
+// Helper for normalising game types
+// Duplicate code! Need to get rid of it and seperate helpers from root.go
+func normaliseGameName(originalName string) string {
+	// Lowercase and trim
+	name := strings.ToLower(strings.TrimSpace(originalName))
+	// Remove parentheses and their content
+	name = parenthesisRegex.ReplaceAllString(name, "")
+	name = strings.TrimSpace(name)
+
+	// Check if it contains 9 or 18 hole references
+	hasNine := strings.Contains(name, "9 hole")
+	hasEighteen := strings.Contains(name, "18 hole")
+
+	// If no hole count found, it's a promo
+	if !hasNine && !hasEighteen {
+		return strings.Title(name)
+	}
+
+	// Use regex to safely replace "9 hole(s)" with "9 holes"
+	name = nineHoleRegex.ReplaceAllString(name, "9 holes")
+	// Use regex to safely replace "18 hole(s)" with "18 holes"
+	name = eighteenHoleRegex.ReplaceAllString(name, "18 holes")
+
+	// Split into words
+	words := strings.Fields(name)
+
+	// Remove the "9 holes" or "18 holes" from words
+	filtered := []string{}
+	skipNext := false
+	for i, w := range words {
+		if w == "9" && i+1 < len(words) && words[i+1] == "holes" {
+			skipNext = true
+			continue
+		}
+		if w == "18" && i+1 < len(words) && words[i+1] == "holes" {
+			skipNext = true
+			continue
+		}
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		filtered = append(filtered, w)
+	}
+
+	// Remove allowed standard modifiers
+	finalWords := []string{}
+	for _, w := range filtered {
+		if !allowedStandardModifiers[w] {
+			finalWords = append(finalWords, w)
+		}
+	}
+
+	// If no extra words remain, it's a pure standard game
+	if len(finalWords) == 0 {
+		if hasNine {
+			return "9 Holes"
+		}
+		if hasEighteen {
+			return "18 Holes"
+		}
+	}
+
+	// Otherwise, it's a promo
+	return strings.Title(name)
 }
