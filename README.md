@@ -125,3 +125,14 @@ TeeTimeFinder -d 21-02-2025 -t 07:00 -c "Hartfield Golf Club"
 ``` shell
 TeeTimeFinder -d 06-02-2025
 ```
+
+## Example Config
+The following is an example config file for TeeTimeFinder. Use this as a reference for what type of URLs are needed for TeeTimeFinder to search.
+
+``` shell
+Secret Harbour Golf Club,https://secretharbour.miclub.com.au/guests/bookings/ViewPublicCalendar.msp,miclub
+Kennedy Bay Golf Club,https://kennedybay.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000,miclub
+The Springs Golf Course,https://springs.quick18.com/teetimes/searchmatrix,Quick18
+Hamersley Golf Course,https://hamersley.quick18.com/teetimes/searchmatrix,Quick18
+Hartfield Golf Club,https://www.hartfieldgolf.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000,Miclub
+```
