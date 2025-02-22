@@ -1,5 +1,7 @@
 # TeeTimeFinder
 
+![Demo](demo.png)
+
 A command-line tool to find and book golf tee times from MiClub and Quick18 websites.
 
 MiClub: https://www.miclub.com.au/cms/
