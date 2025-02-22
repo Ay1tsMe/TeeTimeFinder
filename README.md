@@ -1,6 +1,6 @@
 # TeeTimeFinder
 
-![Demo](demo.jpg)
+![Demo](demo.gif)
 
 A command-line tool to find and book golf tee times from MiClub and Quick18 websites.
 
