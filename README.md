@@ -5,7 +5,7 @@ A command-line tool to find and book golf tee times from MiClub and Quick18 webs
 MiClub: https://www.miclub.com.au/cms/
 Sagacity/Quick18: https://www.sagacitygolf.com/
 
-TeeTimeFinder aims to solve the problem of manually going through multiple course websites to find a tee time available. You can easily search with TeeTimeFinder all the local courses in your area to find a tee time available.
+TeeTimeFinder aims to solve the problem of manually going through multiple course websites to find a tee time available. You can easily search with TeeTimeFinder all the local courses in your area to find a tee time available. Once you have found a tee time, you will be given the URL to complete the booking.
 
 ## Features
 - Search tee times at golf courses all at once
@@ -124,5 +124,3 @@ TeeTimeFinder -d 21-02-2025 -t 07:00 -c "Hartfield Golf Club"
 ``` shell
 TeeTimeFinder -d 06-02-2025
 ```
-
-`
