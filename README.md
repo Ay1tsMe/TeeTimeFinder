@@ -52,3 +52,77 @@ source ~/.zshrc
 ```
 
 ## Configuration
+Before first use, configure which golf courses to search from:
+
+``` shell
+TeeTimeFinder config
+```
+Follow the prompts to add:
+- Course name
+- Booking URL e.g. (https://maylandsembleton.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000) 
+- Website type (MiClub/Quick18)
+
+You can view your configured courses here:
+
+``` shell
+TeeTimeFinder config show
+```
+
+## Usage
+
+### Basic Search
+
+``` shell
+TeeTimeFinder
+```
+- Interactive prompts for date/time/player filters
+- Searches all configured courses
+
+### Advanced Search with Flags
+
+The following searches for Royal Perth and Royal Fremantle for a tee time on the 17/08/2024 at 9am for 2 or more players.
+
+``` shell
+TeeTimeFinder -d 17-08-2024 -t 09:00 -s 2 -c "Royal Perth Golf Club" -c "Royal Fremantle Golf Club"
+```
+
+### Commands and Flags
+Main Commands
+| Flag          | Description                          | Example       |
+|---------------|--------------------------------------|---------------|
+| -d, --date    | Search date (DD-MM-YYYY)             | -d 24-06-2025 |
+| -t, --time    | Centre time for 2hr window (±1 hour) | -t 14:30      |
+| -s, --spots   | Minimum available player spots (1-4) | -s 3          |
+| -c, --courses | Specify particular courses to search | -c "Course"   |
+| -v, --verbose | Enable verbose debug output          |               |
+
+Configuration Commands
+
+``` shell
+# Overwrite course config
+TeeTimeFinder config [-o|--overwrite]
+
+# List configured courses
+TeeTimeFinder config show
+```
+
+## Examples
+1. Find Saturday morning times with 4 spots:
+
+``` shell
+TeeTimeFinder -d 22-02-2025 -t 08:00 -s 4
+```
+
+2. Find Friday morning times at Hartfield Golf Club
+
+``` shell
+TeeTimeFinder -d 21-02-2025 -t 07:00 -c "Hartfield Golf Club"
+```
+
+3. Search for all tee times on Thursday
+
+``` shell
+TeeTimeFinder -d 06-02-2025
+```
+
+`
