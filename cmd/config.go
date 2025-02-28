@@ -244,10 +244,18 @@ var configShowCmd = &cobra.Command{
 		}
 
 		fmt.Println("Configured Golf Courses:")
+		fmt.Println("   [X] indicates the course is blacklisted (skipped in ALL searches).")
+		fmt.Println("   [ ] indicates the course is *not* blacklisted.")
+		fmt.Println()
+
 		i := 1
 
 		for _, course := range courses {
-			fmt.Printf("%d) %s - %s - %s\n", i, course.Name, course.URL, course.WebsiteType)
+			blMark := " "
+			if course.Blacklisted {
+				blMark = "X"
+			}
+			fmt.Printf("%d) [%s] %s - %s - %s\n", i, blMark, course.Name, course.URL, course.WebsiteType)
 			i++
 		}
 	},
@@ -256,7 +264,7 @@ var configShowCmd = &cobra.Command{
 // Command to blacklist a course from the search
 var configBlacklistCmd = &cobra.Command{
 	Use:   "blacklist",
-	Short: "Mark courses as blacklisted so they're skipped in searches",
+	Short: "Toggle blacklisted status so courses are skipped (or re-included) in 'ALL' searches",
 	Run: func(cmd *cobra.Command, args []string) {
 		// 1. Load existing courses into a slice for stable ordering
 		existing := loadExistingCoursesSlice()
@@ -267,6 +275,10 @@ var configBlacklistCmd = &cobra.Command{
 
 		// 2. Print them
 		fmt.Println("Courses in config:")
+		fmt.Println("   [X] => currently blacklisted")
+		fmt.Println("   [ ] => currently not blacklisted")
+		fmt.Println()
+
 		for i, c := range existing {
 			status := " "
 			if c.Blacklisted {
@@ -276,7 +288,7 @@ var configBlacklistCmd = &cobra.Command{
 		}
 
 		// 3. Ask which indexes to blacklist
-		fmt.Println(`Enter the numbers of the courses you want to blacklist (comma-separated), or just press Enter to skip.`)
+		fmt.Println(`Enter the numbers of the courses you want to toggle blacklisted status (comma-separated). For example, picking a blacklisted course will un-blacklist it. Press Enter to make no changes.`)
 		fmt.Print("Your choice: ")
 		choice := strings.TrimSpace(readInput())
 		if choice == "" {
@@ -297,8 +309,8 @@ var configBlacklistCmd = &cobra.Command{
 				fmt.Printf("Index '%d' out of range, skipping.\n", i)
 				continue
 			}
-			// We set that course to blacklisted
-			existing[i-1].Blacklisted = true
+			// Toggle the blacklisted value
+			existing[i-1].Blacklisted = !existing[i-1].Blacklisted
 		}
 
 		// 5. Overwrite the config file with updated data
@@ -307,10 +319,10 @@ var configBlacklistCmd = &cobra.Command{
 		}
 		err := overwriteCoursesToFile(existing)
 		if err != nil {
-			fmt.Printf("Failed to save updated blacklist: %s\n", err)
+			fmt.Printf("Failed to save updated blacklist status: %s\n", err)
 			return
 		}
-		fmt.Println("Blacklist updated successfully!")
+		fmt.Println("Blacklist updates applied successfully!")
 	},
 }
 
