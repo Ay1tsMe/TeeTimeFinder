@@ -20,6 +20,7 @@ import (
 type CourseConfig struct {
 	URL         string
 	WebsiteType string
+	Blacklisted bool
 }
 
 var allowedStandardModifiers = map[string]bool{
@@ -165,7 +166,16 @@ func runScraper(args []string) {
 		} else if choice != "" {
 			fmt.Println("Invalid choice. Searching all courses.")
 		}
+
 		// If user just pressed Enter, proceed with all courses
+		if strings.ToLower(choice) != "specify" {
+			for name, cfg := range courses {
+				if cfg.Blacklisted {
+					debugPrintf("Skipping blacklisted course: %s\n", name)
+					delete(courses, name)
+				}
+			}
+		}
 	}
 
 	selectedDate, err := handleDateInput()
@@ -560,16 +570,25 @@ func loadCourses() (map[string]CourseConfig, error) {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, ",", 3)
-		if len(parts) == 3 {
-			courseName := strings.TrimSpace(parts[0])
-			courseURL := strings.TrimSpace(parts[1])
-			websiteType := strings.TrimSpace(parts[2])
+		parts := strings.SplitN(line, ",", 4)
+		if len(parts) < 3 {
+			continue
+		}
 
-			courses[courseName] = CourseConfig{
-				URL:         courseURL,
-				WebsiteType: websiteType,
-			}
+		courseName := strings.TrimSpace(parts[0])
+		courseURL := strings.TrimSpace(parts[1])
+		websiteType := strings.TrimSpace(parts[2])
+
+		blacklisted := false
+		if len(parts) == 4 {
+			bl := strings.TrimSpace(parts[3])
+			blacklisted = strings.EqualFold(bl, "true")
+		}
+
+		courses[courseName] = CourseConfig{
+			URL:         courseURL,
+			WebsiteType: websiteType,
+			Blacklisted: blacklisted,
 		}
 	}
 

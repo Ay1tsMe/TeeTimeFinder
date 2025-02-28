@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -20,6 +22,7 @@ type CourseInfo struct {
 	Name        string
 	URL         string
 	WebsiteType string
+	Blacklisted bool
 }
 
 var configPath = filepath.Join(os.Getenv("HOME"), ".config", "TeeTimeFinder", "config.txt")
@@ -66,17 +69,26 @@ func loadExistingCourses() map[string]CourseInfo {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, ",", 3)
-		if len(parts) == 3 {
-			courseName := strings.TrimSpace(parts[0])
-			courseURL := strings.TrimSpace(parts[1])
-			websiteType := strings.TrimSpace(parts[2])
+		parts := strings.SplitN(line, ",", 4)
+		if len(parts) < 3 {
+			continue
+		}
 
-			courses[courseURL] = CourseInfo{
-				Name:        courseName,
-				URL:         courseURL,
-				WebsiteType: websiteType,
-			}
+		courseName := strings.TrimSpace(parts[0])
+		courseURL := strings.TrimSpace(parts[1])
+		websiteType := strings.TrimSpace(parts[2])
+
+		blacklisted := false
+		if len(parts) == 4 {
+			bl := strings.TrimSpace(parts[3])
+			blacklisted = strings.EqualFold(bl, "true")
+		}
+
+		courses[courseURL] = CourseInfo{
+			Name:        courseName,
+			URL:         courseURL,
+			WebsiteType: websiteType,
+			Blacklisted: blacklisted,
 		}
 	}
 	return courses
@@ -91,7 +103,7 @@ func appendCoursesToFile(courses []CourseInfo) error {
 	defer file.Close()
 
 	for _, course := range courses {
-		line := fmt.Sprintf("%s,%s,%s\n", course.Name, course.URL, course.WebsiteType)
+		line := fmt.Sprintf("%s,%s,%s,%t\n", course.Name, course.URL, course.WebsiteType, course.Blacklisted)
 		_, err := file.WriteString(line)
 		if err != nil {
 			return err
@@ -109,7 +121,7 @@ func overwriteCoursesToFile(courses []CourseInfo) error {
 	defer file.Close()
 
 	for _, course := range courses {
-		line := fmt.Sprintf("%s,%s,%s\n", course.Name, course.URL, course.WebsiteType)
+		line := fmt.Sprintf("%s,%s,%s,%t\n", course.Name, course.URL, course.WebsiteType, course.Blacklisted)
 		_, err := file.WriteString(line)
 		if err != nil {
 			return err
@@ -241,10 +253,86 @@ var configShowCmd = &cobra.Command{
 	},
 }
 
+// Command to blacklist a course from the search
+var configBlacklistCmd = &cobra.Command{
+	Use:   "blacklist",
+	Short: "Mark courses as blacklisted so they're skipped in searches",
+	Run: func(cmd *cobra.Command, args []string) {
+		// 1. Load existing courses into a slice for stable ordering
+		existing := loadExistingCoursesSlice()
+		if len(existing) == 0 {
+			fmt.Println("No courses found in config.")
+			return
+		}
+
+		// 2. Print them
+		fmt.Println("Courses in config:")
+		for i, c := range existing {
+			status := " "
+			if c.Blacklisted {
+				status = "X" // Mark blacklisted
+			}
+			fmt.Printf("%2d) [%s] %s (%s) - %s\n", i+1, status, c.Name, c.WebsiteType, c.URL)
+		}
+
+		// 3. Ask which indexes to blacklist
+		fmt.Println(`Enter the numbers of the courses you want to blacklist (comma-separated), or just press Enter to skip.`)
+		fmt.Print("Your choice: ")
+		choice := strings.TrimSpace(readInput())
+		if choice == "" {
+			fmt.Println("No changes made.")
+			return
+		}
+
+		// 4. Parse the chosen indexes
+		indexStrings := strings.Split(choice, ",")
+		for _, idxStr := range indexStrings {
+			idxStr = strings.TrimSpace(idxStr)
+			i, err := strconv.Atoi(idxStr)
+			if err != nil {
+				fmt.Printf("Invalid input '%s', skipping.\n", idxStr)
+				continue
+			}
+			if i < 1 || i > len(existing) {
+				fmt.Printf("Index '%d' out of range, skipping.\n", i)
+				continue
+			}
+			// We set that course to blacklisted
+			existing[i-1].Blacklisted = true
+		}
+
+		// 5. Overwrite the config file with updated data
+		if !CreateDir() {
+			return
+		}
+		err := overwriteCoursesToFile(existing)
+		if err != nil {
+			fmt.Printf("Failed to save updated blacklist: %s\n", err)
+			return
+		}
+		fmt.Println("Blacklist updated successfully!")
+	},
+}
+
+// Helper to load into a slice instead of a map, so we can preserve an index
+func loadExistingCoursesSlice() []CourseInfo {
+	cMap := loadExistingCourses()
+	var out []CourseInfo
+	for _, c := range cMap {
+		out = append(out, c)
+	}
+	// (Optional) sort by c.Name or something so it’s stable
+	sort.Slice(out, func(i, j int) bool {
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	return out
+}
+
 // Initialises the command and adds the -overwrite flag
 func init() {
 	rootCmd.AddCommand(configCmd)
 	configCmd.Flags().BoolVarP(&overwrite, "overwrite", "o", false, "Overwrite the existing config")
 
 	configCmd.AddCommand(configShowCmd)
+	configCmd.AddCommand(configBlacklistCmd)
 }
