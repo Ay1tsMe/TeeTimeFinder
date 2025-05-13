@@ -138,3 +138,6 @@ The Springs Golf Course,https://springs.quick18.com/teetimes/searchmatrix,Quick1
 Hamersley Golf Course,https://hamersley.quick18.com/teetimes/searchmatrix,Quick18
 Hartfield Golf Club,https://www.hartfieldgolf.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000,Miclub
 ```
+
+## License
+This project is licensed under the MIT License. See the LICENSE file for more information.
