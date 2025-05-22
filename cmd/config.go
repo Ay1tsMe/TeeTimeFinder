@@ -12,10 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/cursor"
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -38,6 +38,16 @@ type configModel struct {
 	done       bool
 	err        error
 	success    string
+}
+
+type blacklistItem struct {
+	course CourseInfo
+	index  int
+}
+
+type blacklistModel struct {
+	list    list.Model
+	courses []CourseInfo
 }
 
 var (
@@ -270,6 +280,76 @@ func (m configModel) View() string {
 	return b.String()
 }
 
+// bubbletea Blacklist logic
+func (i blacklistItem) Title() string {
+	return i.course.Name
+}
+
+func (i blacklistItem) Description() string {
+	prefix := "[ ]"
+	if i.course.Blacklisted {
+		prefix = "[X]"
+	}
+	return fmt.Sprintf("%s %s (%s)", prefix, i.course.URL, i.course.WebsiteType)
+}
+
+func (i blacklistItem) FilterValue() string {
+	return i.course.Name
+}
+
+func initialBlacklistModel(courses []CourseInfo) blacklistModel {
+	items := make([]list.Item, len(courses))
+	for i, c := range courses {
+		items[i] = blacklistItem{course: c, index: i}
+	}
+
+	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
+	l.Title = "Toggle blacklist status (press space to toggle, enter to save, esc to quit)"
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(false)
+
+	return blacklistModel{
+		list:    l,
+		courses: courses,
+	}
+}
+
+func (m blacklistModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m blacklistModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "esc":
+			return m, tea.Quit
+		case "enter":
+			return m, tea.Quit
+		case " ":
+			cursor := m.list.Index()
+			m.courses[cursor].Blacklisted = !m.courses[cursor].Blacklisted
+
+			// Refresh the list item's description
+			m.list.SetItem(cursor, blacklistItem{
+				course: m.courses[cursor],
+				index:  cursor,
+			})
+		}
+	case tea.WindowSizeMsg:
+		m.list.SetSize(msg.Width, msg.Height)
+	}
+
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
+}
+
+func (m blacklistModel) View() string {
+	return m.list.View()
+}
+
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Configure golf courses for TeeTimeFinder",
@@ -347,58 +427,27 @@ var configBlacklistCmd = &cobra.Command{
 	Use:   "blacklist",
 	Short: "Toggle blacklisted status so courses are skipped (or re-included) in 'ALL' searches",
 	Run: func(cmd *cobra.Command, args []string) {
-		// 1. Load existing courses into a slice for stable ordering
+		// Load existing courses into a slice for stable ordering
 		existing := loadExistingCoursesSlice()
 		if len(existing) == 0 {
 			fmt.Println("No courses found in config.")
 			return
 		}
 
-		// 2. Print them
-		fmt.Println("Courses in config:")
-		fmt.Println("   [X] => currently blacklisted")
-		fmt.Println("   [ ] => currently not blacklisted")
-		fmt.Println()
-
-		for i, c := range existing {
-			status := " "
-			if c.Blacklisted {
-				status = "X" // Mark blacklisted
-			}
-			fmt.Printf("%2d) [%s] %s (%s) - %s\n", i+1, status, c.Name, c.WebsiteType, c.URL)
-		}
-
-		// 3. Ask which indexes to blacklist
-		fmt.Println(`Enter the numbers of the courses you want to toggle blacklisted status (comma-separated). For example, picking a blacklisted course will un-blacklist it. Press Enter to make no changes.`)
-		fmt.Print("Your choice: ")
-		choice := strings.TrimSpace(readInput())
-		if choice == "" {
-			fmt.Println("No changes made.")
+		p := tea.NewProgram(initialBlacklistModel(existing), tea.WithAltScreen())
+		m, err := p.Run()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
-		// 4. Parse the chosen indexes
-		indexStrings := strings.Split(choice, ",")
-		for _, idxStr := range indexStrings {
-			idxStr = strings.TrimSpace(idxStr)
-			i, err := strconv.Atoi(idxStr)
-			if err != nil {
-				fmt.Printf("Invalid input '%s', skipping.\n", idxStr)
-				continue
-			}
-			if i < 1 || i > len(existing) {
-				fmt.Printf("Index '%d' out of range, skipping.\n", i)
-				continue
-			}
-			// Toggle the blacklisted value
-			existing[i-1].Blacklisted = !existing[i-1].Blacklisted
-		}
+		model := m.(blacklistModel)
 
-		// 5. Overwrite the config file with updated data
 		if !CreateDir() {
 			return
 		}
-		err := overwriteCoursesToFile(existing)
+
+		err = overwriteCoursesToFile(model.courses)
 		if err != nil {
 			fmt.Printf("Failed to save updated blacklist status: %s\n", err)
 			return
