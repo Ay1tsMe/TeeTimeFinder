@@ -9,6 +9,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -53,6 +54,7 @@ type blacklistModel struct {
 var (
 	defaultStyle = lipgloss.NewStyle()
 	hoverStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
+	titleStyle   = lipgloss.NewStyle().Background(lipgloss.Color("5")).Foreground(lipgloss.Color("15")).Bold(true)
 	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true)
 	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true)
 	configPath   = filepath.Join(os.Getenv("HOME"), ".config", "TeeTimeFinder", "config.txt")
@@ -297,14 +299,40 @@ func (i blacklistItem) FilterValue() string {
 	return i.course.Name
 }
 
+type blacklistDelegate struct{}
+
+func (d blacklistDelegate) Height() int                               { return 2 }
+func (d blacklistDelegate) Spacing() int                              { return 1 }
+func (d blacklistDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
+
+func (d blacklistDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	item := listItem.(blacklistItem)
+
+	style := defaultStyle
+	if index == m.Index() {
+		style = hoverStyle
+	}
+
+	prefix := "[ ]"
+	if item.course.Blacklisted {
+		prefix = "[X]"
+	}
+
+	title := style.Bold(true).Render(item.course.Name)
+	desc := style.Render(fmt.Sprintf("%s %s (%s)", prefix, item.course.URL, item.course.WebsiteType))
+
+	fmt.Fprintf(w, "%s\n%s", title, desc)
+}
+
 func initialBlacklistModel(courses []CourseInfo) blacklistModel {
 	items := make([]list.Item, len(courses))
 	for i, c := range courses {
 		items[i] = blacklistItem{course: c, index: i}
 	}
 
-	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
+	l := list.New(items, blacklistDelegate{}, 0, 0)
 	l.Title = "Toggle blacklist status (press space to toggle, enter to save, esc to quit)"
+	l.Styles.Title = titleStyle
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
 
