@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +23,15 @@ type CourseConfig struct {
 	URL         string
 	WebsiteType string
 	Blacklisted bool
+}
+
+// bubbletea model
+type startFormModel struct {
+	focus   int
+	done    bool
+	err     error
+	in      []textinput.Model // 0=course choice, 1=date, 2=time, 3=spots
+	courses []string
 }
 
 var allowedStandardModifiers = map[string]bool{
@@ -39,6 +50,7 @@ var specifiedSpots int
 var globalSelectedDate time.Time
 var verboseMode bool
 var courseList []string
+var choice string
 
 // Pre-scraped data structure to hold all times if a time filter is used
 var preScrapedTimes map[string]map[string]map[string][]shared.TeeTimeSlot
@@ -107,74 +119,77 @@ func debugPrintf(format string, a ...interface{}) {
 
 // Function to run the scraper
 func runScraper(args []string) {
-	fmt.Println("Starting Golf Scraper...")
-
+	// bubbletea logic
 	courses, err := loadCourses()
 	if err != nil {
 		fmt.Printf("Error loading courses: %v\n", err)
 		return
 	}
+
+	ans, err := collectStartAnswers(courses)
+	if err != nil {
+		fmt.Printf("Failed to start TUI: %v\n", err)
+		return
+	}
+
+	// feed answers into the existing flag-backed vars
+	if ans.date != "" {
+		specifiedDate = ans.date
+	}
+	if ans.time != "" {
+		specifiedTime = ans.time
+	}
+	if ans.spots != "" {
+		if v, _ := strconv.Atoi(ans.spots); v > 0 {
+			specifiedSpots = v
+		}
+	}
+	choice = strings.TrimSpace(strings.ToLower(ans.courseChoice)) // course names typed in the form
+
+	fmt.Println("Starting Golf Scraper...")
 	debugPrintf("Loaded courses: %+v\n", courses)
 
 	var filtered map[string]CourseConfig
-	// We now check if the user provided any courses with the -c flag by checking courseList
+
+	// user passed one or more -c flags
 	if len(courseList) > 0 {
-		// The user specified one or more courses
 		filtered = make(map[string]CourseConfig)
-		for _, cName := range courseList {
-			cName = strings.TrimSpace(cName)
-			cConfig, exists := courses[cName]
-			if !exists {
-				fmt.Printf("Error: Course '%s' does not exist in config.\n", cName)
+		for _, n := range courseList {
+			n = strings.TrimSpace(n)
+			canon, ok := findCourseInsensitive(courses, n)
+			if !ok {
+				fmt.Printf("Error: Course '%s' does not exist in config.\n", n)
 				return
 			}
-			filtered[cName] = cConfig
+			filtered[canon] = courses[canon]
 		}
 		courses = filtered
-	} else {
-		// No courses specified via -c, prompt the user as before
-		fmt.Print("Press Enter to search ALL courses or type 'specify' to pick which courses to search: ")
-		choice := strings.TrimSpace(readInput())
 
-		if strings.ToLower(choice) == "specify" {
-			filtered = make(map[string]CourseConfig)
-			fmt.Println("Enter course names line by line. Type 'done' when finished:")
-			for {
-				fmt.Print("Course Name: ")
-				cName := strings.TrimSpace(readInput())
-				if strings.ToLower(cName) == "done" {
-					break
-				}
-				if cName == "" {
-					fmt.Println("Please enter a valid course name or 'done' if finished.")
-					continue
-				}
-
-				cConfig, exists := courses[cName]
-				if !exists {
-					fmt.Printf("Error: Course '%s' does not exist in config.\n", cName)
-					return
-				}
-				filtered[cName] = cConfig
+		// otherwise use whatever they typed in the first text input
+	} else if choice != "" {
+		filtered = make(map[string]CourseConfig)
+		for _, raw := range strings.Split(choice, ",") {
+			n := strings.TrimSpace(raw)
+			if n == "" {
+				continue
 			}
-
-			if len(filtered) == 0 {
-				fmt.Println("No courses specified. Searching all courses.")
-			} else {
-				courses = filtered
+			canon, ok := findCourseInsensitive(courses, n)
+			if !ok {
+				fmt.Printf("Error: Course '%s' does not exist in config.\n", n)
+				return
 			}
-		} else if choice != "" {
-			fmt.Println("Invalid choice. Searching all courses.")
+			filtered[canon] = courses[canon]
 		}
+		if len(filtered) > 0 {
+			courses = filtered
+		}
+	}
 
-		// If user just pressed Enter, proceed with all courses
-		if strings.ToLower(choice) != "specify" {
-			for name, cfg := range courses {
-				if cfg.Blacklisted {
-					debugPrintf("Skipping blacklisted course: %s\n", name)
-					delete(courses, name)
-				}
-			}
+	// remove black-listed courses unless user explicitly requested them
+	for n, cfg := range courses {
+		if cfg.Blacklisted {
+			debugPrintf("Skipping blacklisted course: %s\n", n)
+			delete(courses, n)
 		}
 	}
 
@@ -265,32 +280,14 @@ func runScraper(args []string) {
 	}
 }
 
-func handleSpotsInput() (bool, error) {
-	// If spots are specified via flag, use them
-	if specifiedSpots != 0 {
-		if specifiedSpots < 1 || specifiedSpots > 4 {
-			return false, fmt.Errorf("Invalid spots value. Spots must be between 1 and 4.")
-		}
-		fmt.Printf("Using provided spots filter: %d\n", specifiedSpots)
-		return true, nil
+func handleSpotsInput() (bool /*filterUsed*/, error) {
+	if specifiedSpots == 0 { // blank / default
+		return false, nil // no filter
 	}
-
-	// If no spots flag is given, prompt the user
-	fmt.Print("Enter the minimum number of spots (1-4) or press Enter to show all spots: ")
-	input := strings.TrimSpace(readInput())
-	if input == "" {
-		return false, nil // No spots filter used
+	if specifiedSpots < 1 || specifiedSpots > 4 {
+		return false, fmt.Errorf("spots must be between 1 and 4")
 	}
-
-	val, err := strconv.Atoi(input)
-	if err != nil || val < 1 || val > 4 {
-		fmt.Println("Invalid spots value. Please enter a number between 1 and 4.")
-		return handleSpotsInput() // Recursively prompt again
-	}
-
-	specifiedSpots = val
-	fmt.Printf("Filtering results for timeslots with at least %d spots.\n", specifiedSpots)
-	return true, nil
+	return true, nil // apply filter
 }
 
 // Function to pre-scrape all times if filters are specified
@@ -600,79 +597,42 @@ func loadCourses() (map[string]CourseConfig, error) {
 }
 
 func handleDateInput() (time.Time, error) {
-	var dateInput string
-
+	// the Bubble Tea form (or –d flag) should already have filled this
 	if specifiedDate == "" {
-		fmt.Print("Enter the date (DD-MM-YYYY): ")
-		dateInput = strings.TrimSpace(readInput())
-	} else {
-		dateInput = specifiedDate
-		fmt.Printf("Using provided date: %s\n", dateInput)
+		return time.Time{}, fmt.Errorf("Date is required (DD-MM-YYYY)")
 	}
 
-	selectedDate, err := time.Parse("02-01-2006", dateInput)
+	dt, err := time.Parse("02-01-2006", specifiedDate)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("Invalid date format. Please use DD-MM-YYYY.")
+		return time.Time{}, fmt.Errorf("Invalid date %q – use DD-MM-YYYY", specifiedDate)
 	}
 
-	// Compare only calendar days (ignore hours)
-	now := time.Now()
-	nowYear, nowMonth, nowDay := now.Date()
-	selYear, selMonth, selDay := selectedDate.Date()
-
-	// Create a midnight-based time.Time for each, just for the date comparison
-	todayMidnight := time.Date(nowYear, nowMonth, nowDay, 0, 0, 0, 0, now.Location())
-	selectedMidnight := time.Date(selYear, selMonth, selDay, 0, 0, 0, 0, selectedDate.Location())
-
-	// If the selected day is strictly before "today," reject
-	if selectedMidnight.Before(todayMidnight) {
-		return time.Time{}, fmt.Errorf("Selected date is in the past.")
+	// cannot be before today (midnight comparison)
+	if dt.Before(time.Now().Truncate(24 * time.Hour)) {
+		return time.Time{}, fmt.Errorf("Selected date is in the past")
 	}
-
-	return selectedDate, nil
+	return dt, nil
 }
 
-func handleTimeInput() (int, int, error) {
-	var timeInput string
-
-	if specifiedTime == "" {
-		fmt.Print("Enter the time (HH:MM) or press Enter to show all times: ")
-		timeInput = strings.TrimSpace(readInput())
-	} else {
-		timeInput = specifiedTime
-		fmt.Printf("Using provided time: %s\n", timeInput)
+func handleTimeInput() (int /*start*/, int /*end*/, error) {
+	if specifiedTime == "" { // user left it blank
+		return 0, 0, nil // no filter
 	}
 
-	if timeInput != "" {
-		filterTimeMinutes, err := parseTimeToMinutes24(timeInput)
-		if err != nil {
-			return 0, 0, fmt.Errorf("Invalid time format. Please use HH:MM (24-hour format).")
-		}
-
-		now := time.Now()
-		nowY, nowM, nowD := now.Date()
-		selY, selM, selD := globalSelectedDate.Date()
-
-		if nowY == selY && nowM == selM && nowD == selD {
-			currentTimeMinutes := now.Hour()*60 + now.Minute()
-			if filterTimeMinutes < currentTimeMinutes {
-				return 0, 0, fmt.Errorf(
-					"The specified time %s is already in the past (%02d:%02d).",
-					timeInput, now.Hour(), now.Minute(),
-				)
-			}
-		}
-
-		filterStartMinutes := filterTimeMinutes - 60
-		filterEndMinutes := filterTimeMinutes + 60
-		fmt.Printf("Filtering results between %02d:%02d and %02d:%02d\n",
-			filterStartMinutes/60, filterStartMinutes%60,
-			filterEndMinutes/60, filterEndMinutes%60)
-
-		return filterStartMinutes, filterEndMinutes, nil
+	mins, err := parseTimeToMinutes24(specifiedTime)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid time %q – use HH:MM (24-hour)", specifiedTime)
 	}
 
-	return 0, 0, nil
+	// if they chose today's date, make sure the time isn't already past
+	now := time.Now()
+	if globalSelectedDate.Year() == now.Year() &&
+		globalSelectedDate.YearDay() == now.YearDay() &&
+		mins < now.Hour()*60+now.Minute() {
+		return 0, 0, fmt.Errorf("specified time %s is already in the past", specifiedTime)
+	}
+
+	return mins - 60 /*start*/, mins + 60 /*end*/, nil
 }
 
 func parseTimeToMinutes(timeStr string) (int, error) {
@@ -721,6 +681,16 @@ func formatMinutesAs12Hour(totalMins int) string {
 
 	// Example output: "03:07 PM"
 	return fmt.Sprintf("%02d:%02d %s", hour12, minute, suffix)
+}
+
+func findCourseInsensitive(all map[string]CourseConfig, typed string) (string, bool) {
+	lower_typed := strings.ToLower(strings.TrimSpace(typed))
+	for k := range all {
+		if strings.ToLower(k) == lower_typed {
+			return k, true
+		}
+	}
+	return "", false
 }
 
 func scrapeCourseData(courses map[string]CourseConfig, selectedDate time.Time) ([]string, []string, map[string]map[string]string) {
@@ -990,4 +960,135 @@ func uniqueNames(items []string) []string {
 		}
 	}
 	return list
+}
+
+// bubbletea logic
+func newStartFormModel(courseNames []string) startFormModel {
+	m := startFormModel{
+		in:      make([]textinput.Model, 4),
+		courses: courseNames,
+	}
+
+	for i := range m.in {
+		ti := textinput.New()
+		ti.CharLimit = 64
+		ti.Width = 48
+
+		switch i {
+		case 0:
+			ti.Placeholder = "Course name(s), comma-sep, or leave blank for ALL"
+			ti.Focus()
+		case 1:
+			ti.Placeholder = "Date  (DD-MM-YYYY)"
+		case 2:
+			ti.Placeholder = "Time  (HH:MM 24h) – optional"
+		case 3:
+			ti.Placeholder = "Min spots 1-4 – optional"
+		}
+		m.in[i] = ti
+	}
+	return m
+}
+
+func (m startFormModel) Init() tea.Cmd { return textinput.Blink }
+
+func (m startFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// ── 1. Handle navigation ────────────────────────────────────────────────
+	if k, ok := msg.(tea.KeyMsg); ok {
+		switch k.String() {
+
+		case "ctrl+c", "esc":
+			m.done = true
+			return m, tea.Quit
+
+		case "enter":
+			if m.focus == len(m.in)-1 { // last box → quit
+				m.done = true
+				return m, tea.Quit
+			}
+			m.focus++ // move *after* the last Update
+
+		case "up":
+			if m.focus > 0 {
+				m.focus--
+			}
+
+		case "down", "tab":
+			if m.focus < len(m.in)-1 {
+				m.focus++
+			}
+		}
+	}
+
+	// ── 2. Blur everything, focus just the chosen field ─────────────────────
+	for i := range m.in {
+		if i == m.focus {
+			m.in[i].Focus()
+			m.in[i].PromptStyle = hoverStyle
+			m.in[i].TextStyle = hoverStyle
+		} else {
+			m.in[i].Blur()
+			m.in[i].PromptStyle = defaultStyle
+			m.in[i].TextStyle = defaultStyle
+		}
+	}
+
+	// ── 3. Let the now-focused field handle the current message ─────────────
+	var cmd tea.Cmd
+	m.in[m.focus], cmd = m.in[m.focus].Update(msg)
+
+	return m, cmd
+}
+
+func (m startFormModel) View() string {
+	var b strings.Builder
+	b.WriteString("TeeTimeFinder – start-up options\n\n")
+
+	labels := []string{"Courses:", "Date:", "Time:", "Minimum spots:"}
+	for i, input := range m.in {
+		b.WriteString(labels[i] + "\n")
+		b.WriteString(input.View() + "\n\n")
+	}
+
+	// show available course names
+	if len(m.courses) > 0 {
+		b.WriteString("Available courses (from config):\n")
+		for _, c := range m.courses {
+			b.WriteString(" • " + c + "\n")
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("[Enter] → next  |  [Esc] → quit")
+	return b.String()
+}
+
+type startAnswers struct {
+	courseChoice string
+	date         string
+	time         string
+	spots        string
+}
+
+func collectStartAnswers(allCourses map[string]CourseConfig) (startAnswers, error) {
+	// turn the map keys into an alphabetically-sorted slice
+	var names []string
+	for n := range allCourses {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	p := tea.NewProgram(newStartFormModel(names), tea.WithAltScreen())
+	model, err := p.Run()
+	if err != nil {
+		return startAnswers{}, err
+	}
+	m := model.(startFormModel)
+
+	return startAnswers{
+		courseChoice: strings.TrimSpace(m.in[0].Value()),
+		date:         strings.TrimSpace(m.in[1].Value()),
+		time:         strings.TrimSpace(m.in[2].Value()),
+		spots:        strings.TrimSpace(m.in[3].Value()),
+	}, nil
 }

@@ -19,7 +19,6 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
@@ -52,13 +51,8 @@ type blacklistModel struct {
 }
 
 var (
-	defaultStyle = lipgloss.NewStyle()
-	hoverStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
-	titleStyle   = lipgloss.NewStyle().Background(lipgloss.Color("5")).Foreground(lipgloss.Color("15")).Bold(true)
-	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true)
-	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true)
-	configPath   = filepath.Join(os.Getenv("HOME"), ".config", "TeeTimeFinder", "config.txt")
-	overwrite    bool
+	configPath = filepath.Join(os.Getenv("HOME"), ".config", "TeeTimeFinder", "config.txt")
+	overwrite  bool
 )
 
 // Checks if the config file exists
