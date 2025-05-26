@@ -560,6 +560,8 @@ func loadCourses() (map[string]CourseConfig, error) {
 	courses := make(map[string]CourseConfig)
 	file, err := os.Open(configPath)
 	if err != nil {
+		fmt.Println("[WARNING] Can't read config file. If this is your first time running TeeTimeFinder, you must run `TeeTimeFinder config` first.")
+		fmt.Println()
 		return nil, fmt.Errorf("failed to open config file: %w", err)
 	}
 	defer file.Close()
