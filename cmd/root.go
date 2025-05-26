@@ -147,6 +147,24 @@ func runScraper(args []string) {
 	}
 	choice = strings.TrimSpace(strings.ToLower(ans.courseChoice)) // course names typed in the form
 
+	courseStr := "ALL"
+	switch {
+	case len(courseList) > 0:
+		courseStr = strings.Join(courseList, ", ")
+	case choice != "":
+		courseStr = choice
+	}
+	timeStr := "any"
+	if specifiedTime != "" {
+		timeStr = specifiedTime
+	}
+	spotsStr := "any"
+	if specifiedSpots > 0 {
+		spotsStr = strconv.Itoa(specifiedSpots)
+	}
+	fmt.Printf("\n Options ⇒  Courses: %s  |  Date: %s  |  Time: %s  |  Min Spots: %s\n\n",
+		courseStr, specifiedDate, timeStr, spotsStr)
+
 	fmt.Println("Starting Golf Scraper...")
 	debugPrintf("Loaded courses: %+v\n", courses)
 
