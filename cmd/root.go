@@ -31,6 +31,7 @@ type startFormModel struct {
 	done    bool
 	err     error
 	in      []textinput.Model // 0=course choice, 1=date, 2=time, 3=spots
+	locked  []bool
 	courses []string
 }
 
@@ -964,36 +965,91 @@ func uniqueNames(items []string) []string {
 
 // bubbletea logic
 func newStartFormModel(courseNames []string) startFormModel {
+	prefilled := []string{
+		strings.Join(courseList, ", "), // –c
+		specifiedDate,                  // –d
+		specifiedTime,                  // –t
+		func() string { // –s
+			if specifiedSpots > 0 {
+				return strconv.Itoa(specifiedSpots)
+			}
+			return ""
+		}(),
+	}
+	locked := []bool{
+		len(courseList) > 0,
+		specifiedDate != "",
+		specifiedTime != "",
+		specifiedSpots > 0,
+	}
+
 	m := startFormModel{
 		in:      make([]textinput.Model, 4),
+		locked:  locked,
 		courses: courseNames,
+	}
+
+	placeholders := []string{
+		"Course name(s), comma-sep, or leave blank for ALL",
+		"Date  (DD-MM-YYYY)",
+		"Time  (HH:MM 24h) – optional",
+		"Min spots 1-4 – optional",
 	}
 
 	for i := range m.in {
 		ti := textinput.New()
 		ti.CharLimit = 64
 		ti.Width = 48
+		ti.Placeholder = placeholders[i]
+		ti.SetValue(prefilled[i])
 
-		switch i {
-		case 0:
-			ti.Placeholder = "Course name(s), comma-sep, or leave blank for ALL"
-			ti.Focus()
-		case 1:
-			ti.Placeholder = "Date  (DD-MM-YYYY)"
-		case 2:
-			ti.Placeholder = "Time  (HH:MM 24h) – optional"
-		case 3:
-			ti.Placeholder = "Min spots 1-4 – optional"
+		if locked[i] {
+			// show as grey & never focusable
+			ti.PromptStyle = defaultStyle
+			ti.TextStyle = defaultStyle
+			ti.Blur() // ensure it is not focused at start
 		}
 		m.in[i] = ti
 	}
+
+	// first editable field (if any) gets initial focus
+	for idx := 0; idx < len(m.in); idx++ {
+		if !locked[idx] {
+			m.focus = idx
+			m.in[idx].Focus()
+			break
+		}
+	}
+
 	return m
+}
+
+// helper: find the next editable field when the user navigates
+func (m startFormModel) nextEditable(from, dir int) int {
+	n := len(m.in)
+	for i := 0; i < n; i++ {
+		from = (from + dir + n) % n
+		if !m.locked[from] {
+			return from
+		}
+	}
+	return from // every field is locked
+}
+
+// true when `idx` is the highest-index editable input
+func (m startFormModel) isLastEditable(idx int) bool {
+	for i := idx + 1; i < len(m.in); i++ {
+		if !m.locked[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (m startFormModel) Init() tea.Cmd { return textinput.Blink }
 
+// Update handles key events, skipping locked inputs.
 func (m startFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// ── 1. Handle navigation ────────────────────────────────────────────────
 	if k, ok := msg.(tea.KeyMsg); ok {
 		switch k.String() {
 
@@ -1002,27 +1058,30 @@ func (m startFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "enter":
-			if m.focus == len(m.in)-1 { // last box → quit
+			if m.locked[m.focus] { // cursor sits on a locked field
+				m.focus = m.nextEditable(m.focus, +1)
+
+			} else if m.isLastEditable(m.focus) {
+				// we were on the last editable field → form finished
 				m.done = true
 				return m, tea.Quit
+
+			} else {
+				// move to the next editable field
+				m.focus = m.nextEditable(m.focus, +1)
 			}
-			m.focus++ // move *after* the last Update
 
 		case "up":
-			if m.focus > 0 {
-				m.focus--
-			}
+			m.focus = m.nextEditable(m.focus, -1)
 
 		case "down", "tab":
-			if m.focus < len(m.in)-1 {
-				m.focus++
-			}
+			m.focus = m.nextEditable(m.focus, +1)
 		}
 	}
 
-	// ── 2. Blur everything, focus just the chosen field ─────────────────────
+	// keep only the focused editable field active
 	for i := range m.in {
-		if i == m.focus {
+		if i == m.focus && !m.locked[i] {
 			m.in[i].Focus()
 			m.in[i].PromptStyle = hoverStyle
 			m.in[i].TextStyle = hoverStyle
@@ -1033,10 +1092,10 @@ func (m startFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// ── 3. Let the now-focused field handle the current message ─────────────
 	var cmd tea.Cmd
-	m.in[m.focus], cmd = m.in[m.focus].Update(msg)
-
+	if !m.locked[m.focus] {
+		m.in[m.focus], cmd = m.in[m.focus].Update(msg)
+	}
 	return m, cmd
 }
 
