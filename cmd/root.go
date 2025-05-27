@@ -52,6 +52,7 @@ var globalSelectedDate time.Time
 var verboseMode bool
 var courseList []string
 var choice string
+var progressProgram *tea.Program
 
 // Pre-scraped data structure to hold all times if a time filter is used
 var preScrapedTimes map[string]map[string]map[string][]shared.TeeTimeSlot
@@ -212,6 +213,13 @@ func runScraper(args []string) {
 		}
 	}
 
+	// start animated progress-bar (one tick per course scraped)
+	totalCourses := len(courses)
+	fmt.Print("\n\n")
+	pbar := tea.NewProgram(newPB(totalCourses), tea.WithOutput(os.Stdout))
+	progressProgram = pbar
+	go func() { _ = pbar.Start() }()
+
 	selectedDate, err := handleDateInput()
 	if err != nil {
 		fmt.Println(err)
@@ -236,6 +244,12 @@ func runScraper(args []string) {
 	debugPrintf("Spots filter used: %v, spots required: %d\n", spotsFilterUsed, specifiedSpots)
 
 	standardGames, promoGames, gameToTimeslotURLs := scrapeCourseData(courses, selectedDate)
+
+	// mark progress bar 100 % and close it
+	pbar.Send(pbMsg(totalCourses))
+	pbar.Wait()
+	fmt.Print("\r\033[K\n")
+	fmt.Println()
 
 	debugPrintf("Standard Games: %v\n", standardGames)
 	debugPrintf("Promo Games: %v\n", promoGames)
@@ -715,6 +729,7 @@ func findCourseInsensitive(all map[string]CourseConfig, typed string) (string, b
 func scrapeCourseData(courses map[string]CourseConfig, selectedDate time.Time) ([]string, []string, map[string]map[string]string) {
 	var standardGames, promoGames []string
 	gameToTimeslotURLs := make(map[string]map[string]string)
+	var scraped = 0
 
 	for courseName, cfg := range courses {
 		fmt.Printf("Scraping URL for course %s: %s\n", courseName, cfg.URL)
@@ -743,6 +758,10 @@ func scrapeCourseData(courses map[string]CourseConfig, selectedDate time.Time) (
 		}
 
 		standardGames, promoGames, gameToTimeslotURLs = categoriseGames(gameTimeslotURLs, courseName, standardGames, promoGames, gameToTimeslotURLs)
+		scraped++
+		if progressProgram != nil {
+			progressProgram.Send(pbMsg(scraped))
+		}
 	}
 
 	return standardGames, promoGames, gameToTimeslotURLs
