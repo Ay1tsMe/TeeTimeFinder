@@ -148,25 +148,6 @@ func runScraper(args []string) {
 	}
 	choice = strings.TrimSpace(strings.ToLower(ans.courseChoice)) // course names typed in the form
 
-	courseStr := "ALL"
-	switch {
-	case len(courseList) > 0:
-		courseStr = strings.Join(courseList, ", ")
-	case choice != "":
-		courseStr = choice
-	}
-	timeStr := "any"
-	if specifiedTime != "" {
-		timeStr = specifiedTime
-	}
-	spotsStr := "any"
-	if specifiedSpots > 0 {
-		spotsStr = strconv.Itoa(specifiedSpots)
-	}
-	fmt.Printf("\n Options ⇒  Courses: %s  |  Date: %s  |  Time: %s  |  Min Spots: %s\n\n",
-		courseStr, specifiedDate, timeStr, spotsStr)
-
-	fmt.Println("Starting Golf Scraper...")
 	debugPrintf("Loaded courses: %+v\n", courses)
 
 	var filtered map[string]CourseConfig
@@ -215,7 +196,6 @@ func runScraper(args []string) {
 
 	// start animated progress-bar (one tick per course scraped)
 	totalCourses := len(courses)
-	fmt.Print("\n\n")
 	pbar := tea.NewProgram(newPB(totalCourses), tea.WithAltScreen())
 	go func() { _ = pbar.Start() }()
 	progressProgram = pbar
@@ -263,9 +243,17 @@ func runScraper(args []string) {
 	timeFilterUsed := (filterStartMinutes != 0 || filterEndMinutes != 0) || spotsFilterUsed
 
 	if timeFilterUsed || spotsFilterUsed {
-		fmt.Println("Filters specified. Searching all courses for available timeslots within the specified range. This can take some time, Please wait...")
-		debugPrintln("Pre-scraping all times due to filters.")
-		preScrapedTimes = preScrapeAllTimes(gameToTimeslotURLs, filterStartMinutes, filterEndMinutes, specifiedSpots, courses)
+		runWithSpinner("Searching all courses for specified criteria... (this can take a while)",
+			func() {
+				debugPrintln("Pre-scraping all times due to filters.")
+				preScrapedTimes = preScrapeAllTimes(
+					gameToTimeslotURLs,
+					filterStartMinutes, filterEndMinutes,
+					specifiedSpots,
+					courses,
+				)
+			},
+		)
 
 		debugPrintln("Filtering available games and courses after pre-scrape.")
 		standardGames, promoGames, gameToTimeslotURLs = filterAvailableGamesAndCourses(standardGames, promoGames, gameToTimeslotURLs, preScrapedTimes)
@@ -311,6 +299,19 @@ func runScraper(args []string) {
 			fmt.Println("Returning to game selection...")
 		}
 	}
+}
+
+// runWithSpinner shows a spinner with the given message while fn() runs.
+func runWithSpinner(msg string, fn func()) {
+	spinProg := tea.NewProgram(newSpinnerModel(msg), tea.WithOutput(os.Stdout))
+
+	go func() { _ = spinProg.Start() }()
+
+	fn() // your long-running work
+
+	spinProg.Send(tea.Quit())
+	spinProg.Wait()       // ← no assignment, Wait() returns nothing now
+	fmt.Print("\r\033[K") // clear the spinner line
 }
 
 func handleSpotsInput() (bool /*filterUsed*/, error) {
