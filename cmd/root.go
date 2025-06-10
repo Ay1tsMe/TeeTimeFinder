@@ -216,9 +216,9 @@ func runScraper(args []string) {
 	// start animated progress-bar (one tick per course scraped)
 	totalCourses := len(courses)
 	fmt.Print("\n\n")
-	pbar := tea.NewProgram(newPB(totalCourses), tea.WithOutput(os.Stdout))
-	progressProgram = pbar
+	pbar := tea.NewProgram(newPB(totalCourses), tea.WithAltScreen())
 	go func() { _ = pbar.Start() }()
+	progressProgram = pbar
 
 	selectedDate, err := handleDateInput()
 	if err != nil {
@@ -732,7 +732,9 @@ func scrapeCourseData(courses map[string]CourseConfig, selectedDate time.Time) (
 	var scraped = 0
 
 	for courseName, cfg := range courses {
-		fmt.Printf("Scraping URL for course %s: %s\n", courseName, cfg.URL)
+		progressProgram.Send(logMsg(
+			fmt.Sprintf("Scraping URL for course %s: %s\n", courseName, cfg.URL),
+		))
 
 		var (
 			gameTimeslotURLs map[string]string
