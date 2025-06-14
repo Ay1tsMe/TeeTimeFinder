@@ -855,44 +855,32 @@ func normaliseGameName(originalName string) string {
 	return strings.Title(name)
 }
 
-func promptGameSelection(standardGames, promoGames []string, gameToTimeslotURLs map[string]map[string]string) string {
-	fmt.Println("\nSelect what game you want to play:")
-	gameOptions := []string{}
-	for i, game := range uniqueNames(standardGames) {
-		fmt.Printf("%d. %s\n", i+1, game)
-		gameOptions = append(gameOptions, game)
-	}
-
+func promptGameSelection(standardGames, promoGames []string, _ map[string]map[string]string) string {
+	gameOptions := uniqueNames(standardGames)
 	if len(promoGames) > 0 {
-		fmt.Printf("%d. Promos\n", len(gameOptions)+1)
 		gameOptions = append(gameOptions, "Promos")
 	}
-
-	if len(gameOptions) == 0 {
-		fmt.Println("No available games to select.")
+	choice, ok, err := selectFromList("Select what game you want to play", gameOptions)
+	if err != nil {
+		fmt.Printf("TUI error: %v\n", err)
 		return ""
 	}
-
-	selectedGame := readChoice(gameOptions)
-
-	if selectedGame == "Promos" {
-		if len(promoGames) > 1 {
-			fmt.Println("\nSelect a promotional game:")
-			for i, promo := range uniqueNames(promoGames) {
-				fmt.Printf("%d. %s\n", i+1, promo)
-			}
-			selectedGame = readChoice(promoGames)
-		} else {
-			selectedGame = promoGames[0]
-		}
+	if !ok || choice == "" {
+		return "" // cancelled
 	}
 
-	return selectedGame
+	// if they picked "Promos", gather the specific promo games
+	if choice == "Promos" {
+		choice, ok, err = selectFromList("Select a promotional game", uniqueNames(promoGames))
+		if err != nil || !ok {
+			return ""
+		}
+	}
+	return choice
 }
 
 func promptCourseSelection(coursesForGame map[string]string) (string, string) {
 	if len(coursesForGame) == 0 {
-		fmt.Println("No courses available for this promo.")
 		return "", ""
 	}
 
@@ -901,30 +889,16 @@ func promptCourseSelection(coursesForGame map[string]string) (string, string) {
 		courseOptions = append(courseOptions, courseName)
 	}
 
-	fmt.Println("\nSelect a course that offers this game:")
-	for i, courseName := range courseOptions {
-		fmt.Printf("%d. %s\n", i+1, courseName)
+	choice, ok, err := selectFromList("Select a course that offers this game", courseOptions)
+	if err != nil {
+		fmt.Printf("TUI error: %v\n", err)
+		return "", ""
+	}
+	if !ok || choice == "" {
+		return "", ""
 	}
 
-	selectedCourse := readChoice(courseOptions)
-	return selectedCourse, coursesForGame[selectedCourse]
-}
-
-func readChoice(options []string) string {
-	fmt.Print("Enter the number of your choice (or 'c' to cancel): ")
-	choiceStr := strings.TrimSpace(readInput())
-
-	if strings.ToLower(choiceStr) == "c" {
-		return ""
-	}
-
-	choice, err := strconv.Atoi(choiceStr)
-	if err != nil || choice < 1 || choice > len(options) {
-		fmt.Println("Invalid choice, please try again.")
-		return ""
-	}
-
-	return options[choice-1]
+	return choice, coursesForGame[choice]
 }
 
 func sortTimesByLayout(availableTimes map[string][]shared.TeeTimeSlot, filterStartMinutes, filterEndMinutes int) ([]string, map[string][]shared.TeeTimeSlot) {
