@@ -46,8 +46,8 @@ func (d simpleDelegate) Render(w io.Writer, m list.Model, index int, listItem li
 
 // keymap
 var defaultKeyMap = list.KeyMap{
-	CursorUp:   key.NewBinding(key.WithKeys("up", "k")),
-	CursorDown: key.NewBinding(key.WithKeys("down", "j")),
+	CursorUp:   key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+	CursorDown: key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
 	AcceptWhileFiltering: key.NewBinding(
 		key.WithKeys("enter"),
 		key.WithHelp("↵", "choose"),
@@ -75,9 +75,11 @@ func newSelector(title string, options []string) selectorModel {
 	l.Title = title
 	l.KeyMap = defaultKeyMap
 	l.SetShowStatusBar(false)
+	l.SetShowHelp(true)
 	l.SetFilteringEnabled(false)
 	l.DisableQuitKeybindings()
 	l.Styles.Title = titleStyle
+	l.Styles.HelpStyle = controlStyle
 
 	return selectorModel{list: l}
 }

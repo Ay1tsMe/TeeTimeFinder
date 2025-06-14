@@ -1132,7 +1132,7 @@ func (m startFormModel) View() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString("[Enter] → next  |  [Esc] → quit")
+	b.WriteString(controlStyle.Render("[Enter]: next | [Esc]: quit"))
 	return b.String()
 }
 
