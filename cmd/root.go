@@ -303,14 +303,14 @@ func runScraper(args []string) {
 
 // runWithSpinner shows a spinner with the given message while fn() runs.
 func runWithSpinner(msg string, fn func()) {
-	spinProg := tea.NewProgram(newSpinnerModel(msg), tea.WithOutput(os.Stdout))
+	spinProg := tea.NewProgram(newSpinnerModel(msg), tea.WithAltScreen(), tea.WithOutput(os.Stdout))
 
 	go func() { _ = spinProg.Start() }()
 
-	fn() // your long-running work
+	fn()
 
 	spinProg.Send(tea.Quit())
-	spinProg.Wait()       // ← no assignment, Wait() returns nothing now
+	spinProg.Wait()       // no assignment, Wait() returns nothing now
 	fmt.Print("\r\033[K") // clear the spinner line
 }
 
