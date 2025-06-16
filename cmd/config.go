@@ -9,12 +9,16 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/cursor"
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -25,8 +29,31 @@ type CourseInfo struct {
 	Blacklisted bool
 }
 
-var configPath = filepath.Join(os.Getenv("HOME"), ".config", "TeeTimeFinder", "config.txt")
-var overwrite bool
+type configModel struct {
+	focusIndex int
+	inputs     []textinput.Model
+	cursorMode cursor.Mode
+	courses    []CourseInfo
+	current    CourseInfo
+	done       bool
+	err        error
+	success    string
+}
+
+type blacklistItem struct {
+	course CourseInfo
+	index  int
+}
+
+type blacklistModel struct {
+	list    list.Model
+	courses []CourseInfo
+}
+
+var (
+	configPath = filepath.Join(os.Getenv("HOME"), ".config", "TeeTimeFinder", "config.txt")
+	overwrite  bool
+)
 
 // Checks if the config file exists
 func ConfigExists() bool {
@@ -130,77 +157,235 @@ func overwriteCoursesToFile(courses []CourseInfo) error {
 	return nil
 }
 
+// bubbletea logic
+func initialConfigModel() configModel {
+	m := configModel{
+		inputs: make([]textinput.Model, 3),
+	}
+	var t textinput.Model
+	for i := range m.inputs {
+		t = textinput.New()
+		t.CharLimit = 512
+		t.Width = 300
+		t.PromptStyle = defaultStyle
+		t.TextStyle = defaultStyle
+
+		switch i {
+		case 0:
+			t.Placeholder = "Course Name"
+			t.Focus()
+		case 1:
+			t.Placeholder = "Course URL"
+		case 2:
+			t.Placeholder = "Website Type (MiClub or Quick18)"
+		}
+		m.inputs[i] = t
+	}
+	return m
+}
+
+func (m configModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m configModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	// Always update the focused input
+	m.inputs[m.focusIndex], cmd = m.inputs[m.focusIndex].Update(msg)
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		s := msg.String()
+
+		switch s {
+		case "ctrl+c", "esc":
+			m.done = true
+			return m, tea.Quit
+
+		case "up":
+			m.focusIndex--
+			if m.focusIndex < 0 {
+				m.focusIndex = len(m.inputs) - 1
+			}
+
+		case "down", "tab":
+			m.focusIndex++
+			if m.focusIndex >= len(m.inputs) {
+				m.focusIndex = 0
+			}
+
+		case "enter":
+			if m.focusIndex == 2 {
+				val := strings.ToLower(m.inputs[2].Value())
+				if val != "miclub" && val != "quick18" {
+					m.err = fmt.Errorf("Invalid website type")
+					m.success = ""
+					return m, nil
+				}
+				m.success = fmt.Sprintf("[SUCCESS] Added %s", m.inputs[0].Value())
+				m.current.Name = m.inputs[0].Value()
+				m.current.URL = m.inputs[1].Value()
+				m.current.WebsiteType = val
+				m.courses = append(m.courses, m.current)
+				m.current = CourseInfo{}
+				for i := range m.inputs {
+					m.inputs[i].SetValue("")
+				}
+				m.focusIndex = 0
+				m.err = nil
+			} else {
+				m.focusIndex = (m.focusIndex + 1) % len(m.inputs)
+			}
+		}
+	}
+
+	// Apply correct focus/blur and styles
+	cmds := make([]tea.Cmd, len(m.inputs))
+	for i := range m.inputs {
+		if i == m.focusIndex {
+			cmds[i] = m.inputs[i].Focus()
+			m.inputs[i].PromptStyle = hoverStyle
+			m.inputs[i].TextStyle = hoverStyle
+		} else {
+			m.inputs[i].Blur()
+			m.inputs[i].PromptStyle = defaultStyle
+			m.inputs[i].TextStyle = defaultStyle
+		}
+	}
+
+	return m, tea.Batch(append(cmds, cmd)...)
+}
+
+func (m configModel) View() string {
+	var b strings.Builder
+	b.WriteString("Enter golf course info:\n\n")
+	for i := range m.inputs {
+		b.WriteString(m.inputs[i].View())
+		b.WriteRune('\n')
+	}
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("Courses added: %d\n", len(m.courses)))
+	if m.err != nil {
+		b.WriteString(errorStyle.Render(fmt.Sprintf("[Error] %s\n", m.err)) + "\n")
+	} else if m.success != "" {
+		b.WriteString(successStyle.Render(m.success) + "\n")
+	}
+
+	b.WriteString("[Enter] to move next, [Esc] to quit\n")
+	return b.String()
+}
+
+// bubbletea Blacklist logic
+func (i blacklistItem) Title() string {
+	return i.course.Name
+}
+
+func (i blacklistItem) Description() string {
+	prefix := "[ ]"
+	if i.course.Blacklisted {
+		prefix = "[X]"
+	}
+	return fmt.Sprintf("%s %s (%s)", prefix, i.course.URL, i.course.WebsiteType)
+}
+
+func (i blacklistItem) FilterValue() string {
+	return i.course.Name
+}
+
+type blacklistDelegate struct{}
+
+func (d blacklistDelegate) Height() int                               { return 2 }
+func (d blacklistDelegate) Spacing() int                              { return 1 }
+func (d blacklistDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
+
+func (d blacklistDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	item := listItem.(blacklistItem)
+
+	style := defaultStyle
+	if index == m.Index() {
+		style = hoverStyle
+	}
+
+	prefix := "[ ]"
+	if item.course.Blacklisted {
+		prefix = "[X]"
+	}
+
+	title := style.Bold(true).Render(item.course.Name)
+	desc := style.Render(fmt.Sprintf("%s %s (%s)", prefix, item.course.URL, item.course.WebsiteType))
+
+	fmt.Fprintf(w, "%s\n%s", title, desc)
+}
+
+func initialBlacklistModel(courses []CourseInfo) blacklistModel {
+	items := make([]list.Item, len(courses))
+	for i, c := range courses {
+		items[i] = blacklistItem{course: c, index: i}
+	}
+
+	l := list.New(items, blacklistDelegate{}, 0, 0)
+	l.Title = "Toggle blacklist status (press space to toggle, enter to save, esc to quit)"
+	l.Styles.Title = titleStyle
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(false)
+
+	return blacklistModel{
+		list:    l,
+		courses: courses,
+	}
+}
+
+func (m blacklistModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m blacklistModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "esc":
+			return m, tea.Quit
+		case "enter":
+			return m, tea.Quit
+		case " ":
+			cursor := m.list.Index()
+			m.courses[cursor].Blacklisted = !m.courses[cursor].Blacklisted
+
+			// Refresh the list item's description
+			m.list.SetItem(cursor, blacklistItem{
+				course: m.courses[cursor],
+				index:  cursor,
+			})
+		}
+	case tea.WindowSizeMsg:
+		m.list.SetSize(msg.Width, msg.Height)
+	}
+
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
+}
+
+func (m blacklistModel) View() string {
+	return m.list.View()
+}
+
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Configure golf courses for TeeTimeFinder",
 	Run: func(cmd *cobra.Command, args []string) {
-		var newCourses []CourseInfo
-		reader := bufio.NewReader(os.Stdin)
-
-		// Load existing courses if not overwriting
-		existingCourses := make(map[string]CourseInfo)
-		if !overwrite {
-			existingCourses = loadExistingCourses()
+		p := tea.NewProgram(initialConfigModel())
+		m, err := p.Run()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
 		}
-
-		fmt.Println("Please provide the golf course details.")
-		for {
-			// Get course name
-			fmt.Print("Enter the name of the course (or 'done' to finish): ")
-			courseName, _ := reader.ReadString('\n')
-			courseName = strings.TrimSpace(courseName)
-
-			if strings.ToLower(courseName) == "done" {
-				break
-			}
-
-			// Get course URL
-			fmt.Print("Enter the URL for the course: ")
-			courseURL, _ := reader.ReadString('\n')
-			courseURL = strings.TrimSpace(courseURL)
-
-			// Get website type
-			var websiteType string
-			for {
-				fmt.Print("Enter the website type (MiClub or Quick18): ")
-				wtype, _ := reader.ReadString('\n')
-				wtype = strings.TrimSpace(wtype)
-
-				// Check if it's MiClub or Quick18 (case-insensitive)
-				if strings.EqualFold(wtype, "MiClub") || strings.EqualFold(wtype, "Quick18") {
-					websiteType = wtype
-					break
-				}
-
-				fmt.Println("Invalid website type. Please enter either 'MiClub' or 'Quick18'.")
-			}
-
-			// Validate course name and URL
-			if courseName == "" || courseURL == "" || websiteType == "" {
-				fmt.Println("Course name, URL or website type cannot be empty. Please try again.")
-				continue
-			}
-
-			// Check if the URL already exists
-			if _, exists := existingCourses[courseURL]; exists {
-				fmt.Println("Golf course already exists, skipping.")
-				continue
-			}
-
-			// Add the course if it's not a duplicate
-			course := CourseInfo{
-				Name:        courseName,
-				URL:         courseURL,
-				WebsiteType: websiteType,
-			}
-			newCourses = append(newCourses, course)
-			existingCourses[courseURL] = course
-
-			fmt.Printf("%s has been added.\n", courseName)
-		}
+		model := m.(configModel)
 
 		// No courses to add
-		if len(newCourses) == 0 {
+		if len(model.courses) == 0 {
 			fmt.Println("No courses were added.")
 			return
 		}
@@ -211,15 +396,13 @@ var configCmd = &cobra.Command{
 		}
 
 		// Either append or overwrite the file based on the -o flag
-		var err error
 		if overwrite {
-			err = overwriteCoursesToFile(newCourses)
+			err = overwriteCoursesToFile(model.courses)
 		} else {
-			err = appendCoursesToFile(newCourses)
+			err = appendCoursesToFile(model.courses)
 		}
-
 		if err != nil {
-			fmt.Printf("Failed to save to config file: %s\n", err)
+			fmt.Printf("Failed to save to config file: %v\n", err)
 			return
 		}
 
@@ -266,58 +449,27 @@ var configBlacklistCmd = &cobra.Command{
 	Use:   "blacklist",
 	Short: "Toggle blacklisted status so courses are skipped (or re-included) in 'ALL' searches",
 	Run: func(cmd *cobra.Command, args []string) {
-		// 1. Load existing courses into a slice for stable ordering
+		// Load existing courses into a slice for stable ordering
 		existing := loadExistingCoursesSlice()
 		if len(existing) == 0 {
 			fmt.Println("No courses found in config.")
 			return
 		}
 
-		// 2. Print them
-		fmt.Println("Courses in config:")
-		fmt.Println("   [X] => currently blacklisted")
-		fmt.Println("   [ ] => currently not blacklisted")
-		fmt.Println()
-
-		for i, c := range existing {
-			status := " "
-			if c.Blacklisted {
-				status = "X" // Mark blacklisted
-			}
-			fmt.Printf("%2d) [%s] %s (%s) - %s\n", i+1, status, c.Name, c.WebsiteType, c.URL)
-		}
-
-		// 3. Ask which indexes to blacklist
-		fmt.Println(`Enter the numbers of the courses you want to toggle blacklisted status (comma-separated). For example, picking a blacklisted course will un-blacklist it. Press Enter to make no changes.`)
-		fmt.Print("Your choice: ")
-		choice := strings.TrimSpace(readInput())
-		if choice == "" {
-			fmt.Println("No changes made.")
+		p := tea.NewProgram(initialBlacklistModel(existing), tea.WithAltScreen())
+		m, err := p.Run()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
 			return
 		}
 
-		// 4. Parse the chosen indexes
-		indexStrings := strings.Split(choice, ",")
-		for _, idxStr := range indexStrings {
-			idxStr = strings.TrimSpace(idxStr)
-			i, err := strconv.Atoi(idxStr)
-			if err != nil {
-				fmt.Printf("Invalid input '%s', skipping.\n", idxStr)
-				continue
-			}
-			if i < 1 || i > len(existing) {
-				fmt.Printf("Index '%d' out of range, skipping.\n", i)
-				continue
-			}
-			// Toggle the blacklisted value
-			existing[i-1].Blacklisted = !existing[i-1].Blacklisted
-		}
+		model := m.(blacklistModel)
 
-		// 5. Overwrite the config file with updated data
 		if !CreateDir() {
 			return
 		}
-		err := overwriteCoursesToFile(existing)
+
+		err = overwriteCoursesToFile(model.courses)
 		if err != nil {
 			fmt.Printf("Failed to save updated blacklist status: %s\n", err)
 			return
