@@ -943,15 +943,18 @@ func sortTimesByLayout(availableTimes map[string][]shared.TeeTimeSlot, filterSta
 }
 
 func displaySortedTimes(layoutTimes map[string][]shared.TeeTimeSlot, sortedLayouts []string) {
-	fmt.Println("Available times:")
+	// build one string per timeslot
+	var lines []string
 	for _, layout := range sortedLayouts {
-		fmt.Printf("\n%s:\n", layout)
+		lines = append(lines, fmt.Sprintf("%s:", layout))
 		for _, timeSlot := range layoutTimes[layout] {
 			prettyTime := reSpaceAMPMRegex.ReplaceAllString(timeSlot.Time, "$1 $2")
-
-			fmt.Printf("%s: %d spots available\n", prettyTime, timeSlot.AvailableSpots)
+			lines = append(lines, fmt.Sprintf("%s: %d spots available\n", prettyTime, timeSlot.AvailableSpots))
 		}
 	}
+
+	// launch pager
+	_, _ = tea.NewProgram(newPagerModel(lines), tea.WithAltScreen()).Run()
 }
 
 func readInput() string {
