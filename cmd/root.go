@@ -295,9 +295,27 @@ func runScraper(args []string) {
 
 		if bookingChoice == "yes" || bookingChoice == "y" {
 			fmt.Printf("Here is the URL for this game: %s\n", timeslotURL)
+
+			fmt.Println("\nWould you like to go back to game selection? (yes/no): ")
+			next := strings.ToLower(strings.TrimSpace(readInput()))
+
+			if next == "yes" || next == "y" {
+				fmt.Println("Returning to game selection...")
+				continue
+			}
 		} else {
-			fmt.Println("Returning to game selection...")
+			fmt.Println("Skipping Booking.")
 		}
+
+		fmt.Println("\nWould you like to go back to game selection? (yes/no): ")
+		next := strings.ToLower(strings.TrimSpace(readInput()))
+
+		if next == "yes" || next == "y" {
+			fmt.Println("Returning to game selection...")
+			continue
+		}
+		fmt.Println("Enjoy your round. Goodbye!")
+		return
 	}
 }
 
