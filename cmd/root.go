@@ -6,6 +6,7 @@ import (
 	"TeeTimeFinder/pkg/shared"
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"sort"
@@ -62,6 +63,8 @@ var nineHoleRegex = regexp.MustCompile(`\b9\s*hole(s)?\b`)
 var eighteenHoleRegex = regexp.MustCompile(`\b18\s*hole(s)?\b`)
 var reSpaceAMPMRegex = regexp.MustCompile(`(\d+:\d+)(AM|PM)\b`)
 
+var logFile *os.File
+
 var rootCmd = &cobra.Command{
 	Use:   "TeeTimeFinder",
 	Short: "A CLI tool for finding golf tee times",
@@ -84,7 +87,23 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&specifiedDate, "date", "d", "", "Specify the date for the tee time search (format: DD-MM-YYYY)")
 	rootCmd.PersistentFlags().IntVarP(&specifiedSpots, "spots", "s", 0, "Filter timeslots based on available player spots (1-4)")
 	rootCmd.PersistentFlags().StringArrayVarP(&courseList, "courses", "c", nil, "Specify particular courses to search")
-	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "Enable verbose debug output")
+	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "Enable verbose debug output (Creates debug.log file found in your config directory)")
+
+	// Initalise logging for -verbose flag
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		f, err := setupLogging()
+		if err != nil {
+			return err
+		}
+		logFile = f
+		return nil
+	}
+
+	rootCmd.PersistentPostRun = func(cmd *cobra.Command, _ []string) {
+		if logFile != nil {
+			_ = logFile.Close()
+		}
+	}
 
 	// Register the completion function here
 	rootCmd.RegisterFlagCompletionFunc("courses", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -109,13 +128,13 @@ func init() {
 // Debug print functions that only print if verboseMode is true
 func debugPrintln(a ...interface{}) {
 	if verboseMode {
-		fmt.Println("DEBUG:", fmt.Sprint(a...))
+		log.Println(a...)
 	}
 }
 
 func debugPrintf(format string, a ...interface{}) {
 	if verboseMode {
-		fmt.Printf("DEBUG: "+format, a...)
+		log.Printf(format, a...)
 	}
 }
 
