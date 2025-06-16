@@ -48,7 +48,7 @@ func (d simpleDelegate) Render(w io.Writer, m list.Model, index int, listItem li
 var defaultKeyMap = list.KeyMap{
 	CursorUp:   key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
 	CursorDown: key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-	AcceptWhileFiltering: key.NewBinding(key.WithKeys("enter", "l"), key.WithHelp("↵/l", "choose")),
+	AcceptWhileFiltering: key.NewBinding(key.WithKeys("enter", "l", "right"), key.WithHelp("↵/l", "choose")),
 	Quit: key.NewBinding(key.WithKeys("esc", "ctrl+c", "h"), key.WithHelp("esc/h", "cancel")),
 }
 
