@@ -91,13 +91,13 @@ TeeTimeFinder -d 17-08-2024 -t 09:00 -s 2 -c "Royal Perth Golf Club" -c "Royal F
 
 ### Commands and Flags
 Main Commands
-| Flag          | Description                          | Example       |
-|---------------|--------------------------------------|---------------|
-| -d, --date    | Search date (DD-MM-YYYY)             | -d 24-06-2025 |
-| -t, --time    | Centre time for 2hr window (±1 hour) | -t 14:30      |
-| -s, --spots   | Minimum available player spots (1-4) | -s 3          |
-| -c, --courses | Specify particular courses to search | -c "Course"   |
-| -v, --verbose | Enable verbose debug output          |               |
+| Flag          | Description                                                            | Example       |
+|---------------|------------------------------------------------------------------------|---------------|
+| -d, --date    | Search date (DD-MM-YYYY)                                               | -d 24-06-2025 |
+| -t, --time    | Centre time for 2hr window (±1 hour)                                   | -t 14:30      |
+| -s, --spots   | Minimum available player spots (1-4)                                   | -s 3          |
+| -c, --courses | Specify particular courses to search                                   | -c "Course"   |
+| -v, --verbose | Enable verbose debug output (debug.log file found in config directory) |               |
 
 Configuration Commands
 

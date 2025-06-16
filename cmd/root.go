@@ -87,7 +87,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&specifiedDate, "date", "d", "", "Specify the date for the tee time search (format: DD-MM-YYYY)")
 	rootCmd.PersistentFlags().IntVarP(&specifiedSpots, "spots", "s", 0, "Filter timeslots based on available player spots (1-4)")
 	rootCmd.PersistentFlags().StringArrayVarP(&courseList, "courses", "c", nil, "Specify particular courses to search")
-	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "Enable verbose debug output")
+	rootCmd.PersistentFlags().BoolVarP(&verboseMode, "verbose", "v", false, "Enable verbose debug output (Creates  debug.log file found in your config directory)")
 
 	// Initalise logging for -verbose flag
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
