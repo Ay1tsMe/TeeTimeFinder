@@ -63,6 +63,6 @@ func (m pagerModel) View() string {
 	}
 
 	b.WriteString("  " + m.paginator.View())
-	b.WriteString("\n\n  h/l ←/→ page • q: quit\n")
+	b.WriteString("\n\n  h/l ←/→ page • q/enter: continue\n")
 	return b.String()
 }
