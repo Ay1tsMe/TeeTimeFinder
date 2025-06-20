@@ -10,16 +10,16 @@ import (
 const slotsPerPage = 18 // rows per page
 
 type pagerModel struct {
-	lines     []string      // fully-rendered “07:03 am – 4 spots” strings
-	paginator     paginator.Model
+	lines     []string // fully-rendered “07:03 am – 4 spots” strings
+	paginator paginator.Model
 }
 
 func newPagerModel(lines []string) pagerModel {
 	p := paginator.New()
-	p.Type = paginator.Dots      // slick “•••” footer
+	p.Type = paginator.Dots // slick “•••” footer
 	p.PerPage = slotsPerPage
-	p.InactiveDot  = "·" // grey “dot”
-	p.ActiveDot    = "●"
+	p.InactiveDot = "·" // grey “dot”
+	p.ActiveDot = "●"
 	p.SetTotalPages(len(lines))
 
 	return pagerModel{lines: lines, paginator: p}
@@ -55,7 +55,7 @@ func (m pagerModel) View() string {
 	start, end := m.paginator.GetSliceBounds(len(m.lines))
 	for _, l := range m.lines[start:end] {
 
-		if strings.HasSuffix(l, ":"){
+		if strings.HasSuffix(l, ":") {
 			b.WriteString("  • " + strings.TrimSuffix(l, "\n") + "\n\n")
 		} else {
 			b.WriteString("    • " + strings.TrimSuffix(l, "\n") + "\n\n")
@@ -63,6 +63,9 @@ func (m pagerModel) View() string {
 	}
 
 	b.WriteString("  " + m.paginator.View())
-	b.WriteString("\n\n  h/l ←/→ page • q/enter: continue\n")
+
+	help := controlStyle.Render("\n\n  h/l ←/→ page • q/enter: continue\n")
+	b.WriteString(help)
+
 	return b.String()
 }
