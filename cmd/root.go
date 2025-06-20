@@ -28,12 +28,13 @@ type CourseConfig struct {
 
 // bubbletea model
 type startFormModel struct {
-	focus   int
-	done    bool
-	err     error
-	in      []textinput.Model // 0=course choice, 1=date, 2=time, 3=spots
-	locked  []bool
-	courses []string
+	focus     int
+	done      bool
+	err       error
+	in        []textinput.Model // 0=course choice, 1=date, 2=time, 3=spots
+	locked    []bool
+	courses   []string
+	blacklist map[string]bool
 }
 
 var allowedStandardModifiers = map[string]bool{
@@ -1013,7 +1014,7 @@ func uniqueNames(items []string) []string {
 }
 
 // bubbletea logic
-func newStartFormModel(courseNames []string) startFormModel {
+func newStartFormModel(courseNames []string, blacklist map[string]bool) startFormModel {
 	prefilled := []string{
 		strings.Join(courseList, ", "), // –c
 		specifiedDate,                  // –d
@@ -1033,9 +1034,10 @@ func newStartFormModel(courseNames []string) startFormModel {
 	}
 
 	m := startFormModel{
-		in:      make([]textinput.Model, 4),
-		locked:  locked,
-		courses: courseNames,
+		in:        make([]textinput.Model, 4),
+		locked:    locked,
+		courses:   courseNames,
+		blacklist: blacklist,
 	}
 
 	placeholders := []string{
@@ -1162,7 +1164,11 @@ func (m startFormModel) View() string {
 	if len(m.courses) > 0 {
 		b.WriteString("Available courses (from config):\n")
 		for _, c := range m.courses {
-			b.WriteString(" • " + c + "\n")
+			if m.blacklist[c] {
+				b.WriteString(" • " + blacklistStyle.Render(c) + "\n")
+			} else {
+				b.WriteString(" • " + c + "\n")
+			}
 		}
 		b.WriteString("\n")
 	}
@@ -1181,12 +1187,14 @@ type startAnswers struct {
 func collectStartAnswers(allCourses map[string]CourseConfig) (startAnswers, error) {
 	// turn the map keys into an alphabetically-sorted slice
 	var names []string
-	for n := range allCourses {
+	bl := make(map[string]bool)
+	for n, cfg := range allCourses {
 		names = append(names, n)
+		bl[n] = cfg.Blacklisted
 	}
 	sort.Strings(names)
 
-	p := tea.NewProgram(newStartFormModel(names), tea.WithAltScreen())
+	p := tea.NewProgram(newStartFormModel(names, bl), tea.WithAltScreen())
 	model, err := p.Run()
 	if err != nil {
 		return startAnswers{}, err
