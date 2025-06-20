@@ -290,6 +290,7 @@ func runScraper(args []string) {
 
 		if selectedGame == "" {
 			debugPrintln("No game selected, stopping.")
+			fmt.Println("\nQuitting TeeTimeFinder. Goodbye!")
 			break
 		}
 
@@ -297,8 +298,8 @@ func runScraper(args []string) {
 		debugPrintf("User selected course: %s, URL: %s\n", selectedCourse, timeslotURL)
 
 		if selectedCourse == "" {
-			debugPrintln("No course selected, stopping.")
-			break
+			debugPrintln("No course selected, going back.")
+			continue
 		}
 
 		debugPrintf("Displaying times. timeFilterUsed: %v, spotsFilterUsed: %v\n", timeFilterUsed, spotsFilterUsed)
