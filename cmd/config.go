@@ -50,6 +50,12 @@ type blacklistModel struct {
 	courses []CourseInfo
 }
 
+type deleteItem struct {
+	course CourseInfo
+	index int
+	selected bool
+}
+
 var (
 	configPath = filepath.Join(os.Getenv("HOME"), ".config", "TeeTimeFinder", "config.txt")
 	overwrite  bool
@@ -372,6 +378,102 @@ func (m blacklistModel) View() string {
 	return m.list.View()
 }
 
+func (i deleteItem) Title() string {
+	return i.course.Name
+}
+
+func (i deleteItem) Description() string {
+	prefix := "[  ]"
+	if i.selected {
+		prefix = "[X]"
+	}
+	return fmt.Sprintf("%s %s (%s)", prefix, i.course.URL, i.course.WebsiteType)
+}
+
+func (i deleteItem) FilterValue() string {
+	return i.course.Name
+}
+
+// list delegate (looks identical to blacklist’s but tracks “selected”)
+type deleteDelegate struct{}
+
+func (d deleteDelegate) Height() int                               { return 2 }
+func (d deleteDelegate) Spacing() int                              { return 1 }
+func (d deleteDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
+func (d deleteDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	it := listItem.(deleteItem)
+
+	style := defaultStyle
+	if index == m.Index() {
+		style = hoverStyle
+	}
+	prefix := "[ ]"
+	if it.selected {
+		prefix = "[X]"
+	}
+	title := style.Bold(true).Render(it.course.Name)
+	desc := style.Render(fmt.Sprintf("%s %s (%s)", prefix, it.course.URL, it.course.WebsiteType))
+
+	fmt.Fprintf(w, "%s\n%s", title, desc)
+}
+
+// model that wraps the list and keeps track of chosen deletions
+type deleteModel struct {
+	list     list.Model
+	courses  []CourseInfo     // original slice, index-aligned with list items
+	selected map[int]struct{} // indices picked for removal
+}
+
+func initialDeleteModel(courses []CourseInfo) deleteModel {
+	items := make([]list.Item, len(courses))
+	for i, c := range courses {
+		items[i] = deleteItem{course: c, index: i}
+	}
+	l := list.New(items, deleteDelegate{}, 0, 0)
+	l.Title = "Select courses to delete (space to toggle, enter to confirm)"
+	l.Styles.Title = titleStyle
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(false)
+
+	return deleteModel{
+		list:     l,
+		courses:  courses,
+		selected: map[int]struct{}{},
+	}
+}
+
+func (m deleteModel) Init() tea.Cmd { return nil }
+
+func (m deleteModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch k := msg.(type) {
+	case tea.KeyMsg:
+		switch k.String() {
+		case "ctrl+c", "esc":
+			return m, tea.Quit
+		case "enter":
+			return m, tea.Quit
+		case " ":
+			i := m.list.Index()
+			if _, ok := m.selected[i]; ok {
+				delete(m.selected, i)
+			} else {
+				m.selected[i] = struct{}{}
+			}
+			// redraw current item with new prefix
+			cur := m.list.Items()[i].(deleteItem)
+			cur.selected = !cur.selected
+			m.list.SetItem(i, cur)
+		}
+	case tea.WindowSizeMsg:
+		m.list.SetSize(k.Width, k.Height)
+	}
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
+}
+
+func (m deleteModel) View() string { return m.list.View() }
+
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Configure golf courses for TeeTimeFinder",
@@ -478,6 +580,48 @@ var configBlacklistCmd = &cobra.Command{
 	},
 }
 
+var configDeleteCmd = &cobra.Command{
+	Use:   "delete",
+	Short: "Delete courses from the config file",
+	Run: func(cmd *cobra.Command, args []string) {
+		existing := loadExistingCoursesSlice()
+		if len(existing) == 0 {
+			fmt.Println("No courses found in config.")
+			return
+		}
+
+		p := tea.NewProgram(initialDeleteModel(existing), tea.WithAltScreen())
+		m, err := p.Run()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+		model := m.(deleteModel)
+
+		// Build a slice with everything *not* selected
+		var remaining []CourseInfo
+		for i, c := range model.courses {
+			if _, remove := model.selected[i]; !remove {
+				remaining = append(remaining, c)
+			}
+		}
+
+		if len(remaining) == len(existing) {
+			fmt.Println("No courses were deleted.")
+			return
+		}
+
+		if !CreateDir() {
+			return
+		}
+		if err := overwriteCoursesToFile(remaining); err != nil {
+			fmt.Printf("Failed to save updated config: %v\n", err)
+			return
+		}
+		fmt.Println("Selected courses deleted successfully!")
+	},
+}
+
 // Helper to load into a slice instead of a map, so we can preserve an index
 func loadExistingCoursesSlice() []CourseInfo {
 	cMap := loadExistingCourses()
@@ -499,4 +643,5 @@ func init() {
 
 	configCmd.AddCommand(configShowCmd)
 	configCmd.AddCommand(configBlacklistCmd)
+	configCmd.AddCommand(configDeleteCmd)
 }
