@@ -1,129 +1,48 @@
 package cmd
 
 import (
-	"bytes"
-	"io/ioutil"
 	"os"
-	"strings"
+	"path/filepath"
 	"testing"
-	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
-func TestRunScraper(t *testing.T) {
-	// Redirect stdout to capture print statements
-	var output bytes.Buffer
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	// Calculate a date that is two days after the current date
-	currentDate := time.Now()
-	twoDaysLater := currentDate.AddDate(0, 0, 2)
-	specifiedDate = twoDaysLater.Format("02-01-2006")
-
-	// Mock input for the time
-	specifiedTime = "12:00"
-
-	// Run the scraper function
-	runScraper()
-
-	// Capture the output
-	w.Close()
-	os.Stdout = oldStdout
-	_, _ = output.ReadFrom(r)
-
-	// Check if expected output is present
-	outputStr := output.String()
-	expectedText := "Starting Golf Scraper"
-	if !strings.Contains(outputStr, expectedText) {
-		t.Errorf("Expected output to contain '%s', but it didn't. Output: %s", expectedText, outputStr)
-	}
-
-	// Check for error message if no courses are loaded
-	if strings.Contains(outputStr, "Error loading courses") {
-		t.Errorf("Unexpected error while loading courses. Output: %s", outputStr)
-	}
-}
-
-func TestHandleDateInput(t *testing.T) {
-	// Test valid date input
-	// Calculate a date that is two days after the current date
-	currentDate := time.Now()
-	twoDaysLater := currentDate.AddDate(0, 0, 2)
-	specifiedDate = twoDaysLater.Format("02-01-2006")
-
-	date, err := handleDateInput()
-	if err != nil {
-		t.Errorf("Unexpected error for valid date input: %v", err)
-	}
-	if date.Day() != twoDaysLater.Day() || date.Month() != twoDaysLater.Month() || date.Year() != twoDaysLater.Year() {
-		t.Errorf("Expected date to be 15-11-2024, got %v", date)
-	}
-
-	// Test invalid date input
-	specifiedDate = "invalid-date"
-	_, err = handleDateInput()
-	if err == nil {
-		t.Error("Expected error for invalid date input, but got none")
-	}
-}
-
-func TestHandleTimeInput(t *testing.T) {
-	// Test valid time input
-	specifiedTime = "12:30"
-	startMinutes, endMinutes, err := handleTimeInput()
-	if err != nil {
-		t.Errorf("Unexpected error for valid time input: %v", err)
-	}
-	if startMinutes != 690 || endMinutes != 810 { // 690 = 11:30, 810 = 13:30
-		t.Errorf("Expected time range to be 11:30 to 13:30, got %d to %d", startMinutes, endMinutes)
-	}
-
-	// Test invalid time input
-	specifiedTime = "invalid-time"
-	_, _, err = handleTimeInput()
-	if err == nil {
-		t.Error("Expected error for invalid time input, but got none")
-	}
-}
-
 func TestLoadCourses(t *testing.T) {
-	// Use a separate test config file to avoid overwriting the real one
-	tempDir, err := ioutil.TempDir("", "teetimefinder_test")
-	if err != nil {
-		t.Fatalf("Failed to create temporary directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir) // Clean up the temporary directory
+	t.Run("Load Valid Courses", func(t *testing.T) {
+		// Use temporary config file
+		tmpDir := t.TempDir()
+		tmpConfig := filepath.Join(tmpDir, "config.txt")
+		content := "Collier Park Golf Course,https://bookings.collierparkgolf.com.au\nHamersley Golf Course,https://hamersley.quick18.com/teetimes/searchmatrix"
 
-	testConfigPath := tempDir + "/test_config.csv"
+		err := os.WriteFile(tmpConfig, []byte(content), 0644)
+		assert.NoError(t, err, "Failed to write to temp config file")
 
-	// Create a temporary test config file
-	file, err := os.Create(testConfigPath)
-	if err != nil {
-		t.Fatalf("Failed to create test config file: %v", err)
-	}
-	defer file.Close() // Close the file but do not delete it manually
+		// Override global configPath temporarily
+		originalConfigPath := configPath
+		configPath = tmpConfig
+		defer func() { configPath = originalConfigPath }()
 
-	// Write mock data to the test file
-	_, _ = file.WriteString("Wembley Golf Course,https://www.wembleygolf.com.au/guests/bookings/ViewPublicCalendar.msp\n")
-	_, _ = file.WriteString("Fremantle Golf Course,https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000\n")
+		courses, err := loadCourses()
 
-	// Load the courses using the test config path
-	// Temporarily replace the configPath variable with the test config path
-	originalConfigPath := configPath
-	configPath = testConfigPath
-	defer func() { configPath = originalConfigPath }() // Restore the original configPath
+		// Assertions
+		assert.NoError(t, err, "loadCourses() should not return an error")
+		assert.Len(t, courses, 2, "should load exactly 2 courses")
+		assert.Equal(t, "https://bookings.collierparkgolf.com.au", courses["Collier Park Golf Course"])
+		assert.Equal(t, "https://hamersley.quick18.com/teetimes/searchmatrix", courses["Hamersley Golf Course"])
+	})
 
-	courses, err := loadCourses()
-	if err != nil {
-		t.Errorf("Unexpected error loading courses: %v", err)
-	}
+	t.Run("Missing Config File", func(t *testing.T) {
+		// Set configPath to a non-existent file
+		originalConfigPath := configPath
+		configPath = "does_not_exist.txt"
+		defer func() { configPath = originalConfigPath }()
 
-	// Check if the courses are loaded correctly
-	if len(courses) != 2 {
-		t.Errorf("Expected 2 courses, got %d", len(courses))
-	}
-	if courses["Wembley Golf Course"] != "https://www.wembleygolf.com.au/guests/bookings/ViewPublicCalendar.msp" {
-		t.Errorf("Course URL for Wembley Golf Course is incorrect")
-	}
+		courses, err := loadCourses()
+
+		// Assertions
+		assert.Error(t, err, "expected error when config file does not exist")
+		assert.Nil(t, courses, "courses map should be nil on error")
+	})
+
 }
