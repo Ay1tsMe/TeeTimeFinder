@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -45,6 +46,48 @@ func TestLoadCourses(t *testing.T) {
 		assert.Nil(t, courses, "courses map should be nil on error")
 	})
 
+}
+
+func TestHandleDateInput(t *testing.T) {
+	t.Run("Test Valid Date", func(t *testing.T) {
+		// Save and restore global
+		original := specifiedDate
+		defer func() { specifiedDate = original }()
+
+		// Generate a date 1 day in the future to pass the test
+		futureDate := time.Now().AddDate(0, 0, 1).Format("02-01-2006")
+		specifiedDate = futureDate
+
+		selectedDate, err := handleDateInput()
+
+		assert.NoError(t, err, "should not return error for a future date")
+		assert.Equal(t, futureDate, selectedDate.Format("02-01-2006"), "returned date should match the input")
+	})
+
+	t.Run("Test Invalid Date Format", func(t *testing.T) {
+		// Save and restore global
+		original := specifiedDate
+		defer func() { specifiedDate = original }()
+
+		specifiedDate = "06/06/2024"
+
+		_, err := handleDateInput()
+
+		assert.Error(t, err, "should return error for invalid date")
+	})
+
+	t.Run("Test Date in the Past", func(t *testing.T) {
+		// Save and restore global
+		original := specifiedDate
+		defer func() { specifiedDate = original }()
+
+		specifiedDate = "17-08-2023"
+
+		selectedDate, err := handleDateInput()
+
+		assert.Error(t, err, "should return error for date in the past")
+		assert.True(t, selectedDate.IsZero(), "date should be zero value on error")
+	})
 }
 
 func TestHandleTimeInput(t *testing.T) {
