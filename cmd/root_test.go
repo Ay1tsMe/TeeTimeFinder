@@ -16,7 +16,7 @@ func TestLoadCourses(t *testing.T) {
 		content := "Collier Park Golf Course,https://bookings.collierparkgolf.com.au\nHamersley Golf Course,https://hamersley.quick18.com/teetimes/searchmatrix"
 
 		err := os.WriteFile(tmpConfig, []byte(content), 0644)
-		assert.NoError(t, err, "Failed to write to temp config file")
+		assert.NoError(t, err, "should be able to write temp config file")
 
 		// Override global configPath temporarily
 		originalConfigPath := configPath
@@ -45,4 +45,36 @@ func TestLoadCourses(t *testing.T) {
 		assert.Nil(t, courses, "courses map should be nil on error")
 	})
 
+}
+
+func TestHandleTimeInput(t *testing.T) {
+	t.Run("Test Valid times", func(t *testing.T) {
+		// Save and restore global
+		original := specifiedTime
+		defer func() { specifiedTime = original }()
+
+		specifiedTime = "09:30"
+
+		start, end, err := handleTimeInput()
+		assert.NoError(t, err, "should be able to call function")
+
+		// 09:30 -> 9*60 + 30 = 570
+		// start = 570 - 60 = 510, end = 570 + 60 = 630
+		assert.Equal(t, 510, start, "start time should equal 510")
+		assert.Equal(t, 630, end, "end time should equal 630")
+	})
+
+	t.Run("Test Invalid times", func(t *testing.T) {
+		// Save and restore global
+		original := specifiedTime
+		defer func() { specifiedTime = original }()
+
+		specifiedTime = "25:99"
+
+		start, end, err := handleTimeInput()
+
+		assert.Error(t, err, "should return an error for invalid time format")
+		assert.Equal(t, 0, start, "start time should be 0 on error")
+		assert.Equal(t, 0, end, "start time should be 0 on error")
+	})
 }
