@@ -14,7 +14,7 @@ func TestLoadCourses(t *testing.T) {
 		// Use temporary config file
 		tmpDir := t.TempDir()
 		tmpConfig := filepath.Join(tmpDir, "config.txt")
-		content := "Collier Park Golf Course,https://bookings.collierparkgolf.com.au\nHamersley Golf Course,https://hamersley.quick18.com/teetimes/searchmatrix"
+		content := "Collier Park Golf Course,https://bookings.collierparkgolf.com.au,miclub,false\nHamersley Golf Course,https://hamersley.quick18.com/teetimes/searchmatrix,quick18\n"
 
 		err := os.WriteFile(tmpConfig, []byte(content), 0644)
 		assert.NoError(t, err, "should be able to write temp config file")
@@ -29,8 +29,20 @@ func TestLoadCourses(t *testing.T) {
 		// Assertions
 		assert.NoError(t, err, "loadCourses() should not return an error")
 		assert.Len(t, courses, 2, "should load exactly 2 courses")
-		assert.Equal(t, "https://bookings.collierparkgolf.com.au", courses["Collier Park Golf Course"])
-		assert.Equal(t, "https://hamersley.quick18.com/teetimes/searchmatrix", courses["Hamersley Golf Course"])
+
+		// Collier Park
+		collier, ok := courses["Collier Park Golf Course"]
+		assert.True(t, ok, "Collier Park should be present")
+		assert.Equal(t, "https://bookings.collierparkgolf.com.au", collier.URL)
+		assert.Equal(t, "miclub", collier.WebsiteType)
+		assert.False(t, collier.Blacklisted)
+
+		// Hamersley
+		hamersley, ok := courses["Hamersley Golf Course"]
+		assert.True(t, ok, "Hamersley should be present")
+		assert.Equal(t, "https://hamersley.quick18.com/teetimes/searchmatrix", hamersley.URL)
+		assert.Equal(t, "quick18", hamersley.WebsiteType)
+		assert.False(t, hamersley.Blacklisted, "blacklisted should default to false when omitted")
 	})
 
 	t.Run("Missing Config File", func(t *testing.T) {
