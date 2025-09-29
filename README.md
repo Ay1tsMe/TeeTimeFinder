@@ -152,7 +152,7 @@ go test
 
 ``` shell
 # Test pkg files
-cd cmd
+cd pkg
 go test ./...
 ```
 ### Running tests against online URL's
