@@ -321,3 +321,84 @@ func TestScrapeTimes_Offline(t *testing.T) {
 		})
 	}
 }
+
+func TestConstructTimeslotURL(t *testing.T) {
+	t.Parallel()
+
+	type fixture struct {
+		name        string
+		baseURL     string
+		onclickAttr string
+		wantFeeID   string
+		wantDate    string
+		wantValid   bool
+	}
+
+	cases := []fixture{
+		{
+			name:        "Valid onclick attribute builds correct URL",
+			baseURL:     "https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000",
+			onclickAttr: "showTimeSheet('103961', '2025-09-30')",
+			wantFeeID:   "103961",
+			wantDate:    "2025-09-30",
+			wantValid:   true,
+		},
+		{
+			name:        "Extra whitespace and quotes handled correctly",
+			baseURL:     "https://bookings.collierparkgolf.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000",
+			onclickAttr: "showTimesheet( '1500323733' , '2025-10-01' )",
+			wantFeeID:   "1500323733",
+			wantDate:    "2025-10-01",
+			wantValid:   true,
+		},
+		{
+			name:        "Malformed onclick returns empty string",
+			baseURL:     "https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp",
+			onclickAttr: "invalidOnclick",
+			wantValid:   false,
+		},
+		{
+			name:        "Incorrect parameter count returns empty string",
+			baseURL:     "https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp",
+			onclickAttr: "showTimesheet('103961')", // missing date
+			wantValid:   false,
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			parsedBase, err := url.Parse(c.baseURL)
+			require.NoError(t, err, "failed to parse base URL")
+
+			result := constructTimeslotURL(parsedBase, c.onclickAttr)
+
+			if !c.wantValid {
+				assert.Empty(t, result, "expected empty result for invalid onclick input")
+				return
+			}
+
+			require.NotEmpty(t, result, "expected a non-empty result URL")
+
+			u, err := url.Parse(result)
+			require.NoError(t, err, "constructed URL should parse successfully")
+
+			// Check path correctness
+			assert.Contains(t, u.Path, "ViewPublicTimesheet.msp", "path should be updated to timesheet endpoint")
+
+			// Check query parameters
+			q := u.Query()
+			assert.Equal(t, c.wantFeeID, q.Get("feeGroupId"), "feeGroupId should match extracted param")
+			assert.Equal(t, c.wantDate, q.Get("selectedDate"), "selectedDate should match extracted param")
+			assert.Equal(t, "false", q.Get("weekends"), "weekends param should be set to false")
+
+			// Booking resource ID (if present in base) should remain unchanged
+			if parsedBase.Query().Get("booking_resource_id") != "" {
+				assert.Equal(t, parsedBase.Query().Get("booking_resource_id"), q.Get("booking_resource_id"))
+			}
+		})
+	}
+
+}
