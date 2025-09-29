@@ -139,5 +139,32 @@ Hamersley Golf Course,https://hamersley.quick18.com/teetimes/searchmatrix,Quick1
 Hartfield Golf Club,https://www.hartfieldgolf.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000,Miclub
 ```
 
-## License
-This project is licensed under the MIT License. See the LICENSE file for more information.
+## Running Tests
+There are multiple tests files in folders `cmd` and `pkg`. Before contributing code, make sure that your code passes all tests.
+
+To run the tests, run the following in the project root:
+
+``` shell
+# Test cmd files
+cd cmd
+go test
+```
+
+``` shell
+# Test pkg files
+cd cmd
+go test ./...
+```
+### Running tests against online URL's
+You can also run tests against the live websites which TeeTimeFinder searches. 
+
+To run the tests, run the following in the project root:
+
+``` shell
+# Run tests against live websites
+cd pkg/miclub
+go test -args -online
+```
+
+## Licence
+This project is licensed under the MIT Licence. See the LICENCE file for more information.
