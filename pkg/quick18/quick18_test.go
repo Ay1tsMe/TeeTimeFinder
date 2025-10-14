@@ -2,7 +2,11 @@ package quick18
 
 import (
 	"flag"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -64,6 +68,83 @@ func TestScrapeDates_Online(t *testing.T) {
 
 				q := u.Query()
 				assert.Equal(t, wantTeeDate, q.Get("teedate"), "teedate should match selectedDate (YYYYMMDD)")
+			}
+		})
+	}
+}
+
+func TestScrapeDates_Offline(t *testing.T) {
+	t.Parallel()
+
+	type fixture struct {
+		name     string
+		fileName string
+	}
+
+	cases := []fixture{
+		{
+			name:     "The Springs",
+			fileName: "the_springs.html",
+		},
+		{
+			name:     "Hamersley",
+			fileName: "hamersley.html",
+		},
+	}
+
+	// Snapshot date we expect to plug into teedate
+	const snapshotDateISO = "2025-02-11"
+	const expectedTeeDate = "20250211"
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Read local HTML snapshot
+			fp := filepath.Join("testdata", c.fileName)
+			html, err := os.ReadFile(fp)
+			require.NoError(t, err, "failed to read local html file")
+
+			// Parse snapshot date
+			selectedDate, err := time.Parse("2006-01-02", snapshotDateISO)
+			require.NoError(t, err)
+
+			// Start http server to serve HTML file
+			http_server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/teetimes/searchmatrix" {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				_, _ = w.Write(html)
+			}))
+			defer http_server.Close()
+
+			// Build a base URL pointing to the test server
+			base, _ := url.Parse(http_server.URL)
+			base.Path = "/teetimes/searchmatrix"
+
+			// Run ScrapeDates
+			results, scrapeErr := ScrapeDates(base.String(), selectedDate)
+
+			assert.NoError(t, scrapeErr, "ScrapeDates should succeed against served snapshot")
+			require.NotNil(t, results, "results map should not be nil")
+			require.NotZero(t, len(results), "expected at least one available column/entry for snapshot")
+
+			for header, ustr := range results {
+				require.NotEmpty(t, header, "header (game type) should not be empty")
+
+				u, perr := url.Parse(ustr)
+				require.NoError(t, perr, "result URL should parse")
+
+				// Scheme/host should match the test server
+				assert.Equal(t, base.Scheme, u.Scheme)
+				assert.Equal(t, base.Host, u.Host)
+				assert.Contains(t, u.Path, "searchmatrix", "URL should point to Quick18 searchmatrix endpoint")
+
+				q := u.Query()
+				assert.Equal(t, expectedTeeDate, q.Get("teedate"), "teedate should match snapshot date (YYYYMMDD)")
 			}
 		})
 	}
