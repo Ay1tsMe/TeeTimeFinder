@@ -303,3 +303,155 @@ func TestScrapeTimes_Offline(t *testing.T) {
 		})
 	}
 }
+
+func TestParseTimeCell(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "Splits 2-line time to single line with space",
+			in:   "2:30\nPM",
+			want: "2:30 PM",
+		},
+		{
+			name: "Trims and joins with lowercase am/pm preserved",
+			in:   "  7:05\nam  ",
+			want: "7:05 am",
+		},
+		{
+			name: "No newline - returned as-is",
+			in:   "10:00 PM",
+			want: "10:00 PM",
+		},
+		{
+			name: "Two lines with trailing newline",
+			in:   "9:00\nAM\n",
+			want: "9:00 AM",
+		},
+		{
+			name: "Three lines collapses newlines to spaces",
+			in:   "8:15\nAM\nExtra",
+			want: "8:15 AM Extra",
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got := parseTimeCell(c.in)
+			assert.Equal(t, c.want, got)
+		})
+	}
+}
+
+func TestParsePlayers(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		in   string
+		want int
+	}{
+		{
+			name: "Extract max players from range",
+			in:   "1 to 4 players",
+			want: 4,
+		},
+		{
+			name: "Single Player",
+			in:   "1 player",
+			want: 1,
+		},
+		{
+			name: "Up to N players",
+			in:   "Up to 3 players",
+			want: 3,
+		},
+		{
+			name: "Hyphen range",
+			in:   "2 - 4 players",
+			want: 4,
+		},
+		{
+			name: "No digits defaults to 1",
+			in:   "No availability",
+			want: 1,
+		},
+		{
+			name: "Whitespace and suffix",
+			in:   " 3 players ",
+			want: 3,
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got := parsePlayers(c.in)
+			assert.Equal(t, c.want, got)
+		})
+	}
+}
+
+func TestNormaliseGameName(t *testing.T) {
+	t.Parallel()
+
+	type tc struct {
+		name string
+		in   string
+		want string
+	}
+	cases := []tc{
+		{
+			name: "9 holes with allowed modifier in parentheses -> 9 Holes",
+			in:   "9 Holes (Walking)",
+			want: "9 Holes",
+		},
+		{
+			name: "18 holes with allowed words -> 18 Holes",
+			in:   "18 holes carts can be added",
+			want: "18 Holes",
+		},
+		{
+			name: "Promo with no hole count -> Title case",
+			in:   "early bird special",
+			want: "Early Bird Special",
+		},
+		{
+			name: "9 hole midweek spacing/case -> 9 Holes",
+			in:   "  9   hole  Midweek  ",
+			want: "9 Holes",
+		},
+		{
+			name: "18 holes with extra non-allowed words -> promo title",
+			in:   "18 HOLES Twilight Special",
+			want: "18 Holes Twilight Special",
+		},
+		{
+			name: "Course name (allowed) + 9 holes -> 9 Holes",
+			in:   "Maylands 9 Holes",
+			want: "9 Holes",
+		},
+		{
+			name: "Parentheses content removed and trimmed",
+			in:   "9 Holes (carts)   ",
+			want: "9 Holes",
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got := normaliseGameName(c.in)
+			require.NotEmpty(t, got)
+			assert.Equal(t, c.want, got)
+		})
+	}
+}
