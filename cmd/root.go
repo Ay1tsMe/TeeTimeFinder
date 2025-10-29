@@ -830,9 +830,12 @@ func normaliseGameName(originalName string) string {
 	name = parenthesisRegex.ReplaceAllString(name, "")
 	name = strings.TrimSpace(name)
 
+	// Collapse all runs of whitespace to a single space
+	name = strings.Join(strings.Fields(name), " ")
+
 	// Check if it contains 9 or 18 hole references
-	hasNine := strings.Contains(name, "9 hole")
-	hasEighteen := strings.Contains(name, "18 hole")
+	hasNine := nineHoleRegex.MatchString(name)
+	hasEighteen := eighteenHoleRegex.MatchString(name)
 
 	// If no hole count found, it's a promo
 	if !hasNine && !hasEighteen {
