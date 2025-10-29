@@ -161,8 +161,14 @@ You can also run tests against the live websites which TeeTimeFinder searches.
 To run the tests, run the following in the project root:
 
 ``` shell
-# Run tests against live websites
+# Run tests against miclub websites
 cd pkg/miclub
+go test -args -online
+```
+
+``` shell
+# Run tests against quick18 websites
+cd pkg/quick18
 go test -args -online
 ```
 
