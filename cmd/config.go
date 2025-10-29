@@ -51,8 +51,8 @@ type blacklistModel struct {
 }
 
 type deleteItem struct {
-	course CourseInfo
-	index int
+	course   CourseInfo
+	index    int
 	selected bool
 }
 
@@ -99,8 +99,8 @@ func loadExistingCourses() map[string]CourseInfo {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue // Skip empty lines and comments
 		}
 		parts := strings.SplitN(line, ",", 4)
 		if len(parts) < 3 {

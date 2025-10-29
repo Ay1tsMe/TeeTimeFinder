@@ -1,0 +1,4 @@
+Collier Park Golf Course,https://bookings.collierparkgolf.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000,miclub,true
+Hamersley Golf Course,https://hamersley.quick18.com/teetimes/searchmatrix,Quick18,false
+Fremantle Golf Course,https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000,miclub,false
+The Springs Golf Course,https://springs.quick18.com/teetimes/searchmatrix,Quick18,false
