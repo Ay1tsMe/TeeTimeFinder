@@ -113,3 +113,102 @@ func TestLoadExistingCourses(t *testing.T) {
 	assert.Equal(t, "Quick18", springs.WebsiteType)
 	assert.False(t, springs.Blacklisted)
 }
+
+func TestAppendCoursesToFile(t *testing.T) {
+	cfgPath, restore := withTempConfigPath(t, ".config/TeeTimeFinder/config.txt")
+	defer restore()
+
+	require.True(t, CreateDir(), "CreateDir must succeed for test")
+
+	// test cases
+	courses := []CourseInfo{
+		{
+			Name:        "Fremantle Golf Course",
+			URL:         "https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000",
+			WebsiteType: "miclub",
+			Blacklisted: false,
+		},
+		{
+			Name:        "The Springs Golf Course",
+			URL:         "https://springs.quick18.com/teetimes/searchmatrix",
+			WebsiteType: "Quick18",
+			Blacklisted: false,
+		},
+	}
+
+	// Append both courses to new file
+	require.NoError(t, appendCoursesToFile(courses), "appendCoursesToFile should succeed")
+
+	// Verify file content
+	bytes, err := os.ReadFile(cfgPath)
+	require.NoError(t, err, "expected config file to exist after append")
+	expected := "" +
+		"Fremantle Golf Course,https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000,miclub,false\n" +
+		"The Springs Golf Course,https://springs.quick18.com/teetimes/searchmatrix,Quick18,false\n"
+	assert.Equal(t, expected, string(bytes), "file content should match expected lines")
+
+	// Verify results
+	response := loadExistingCourses()
+	require.Len(t, response, 2, "expected two courses parsed")
+
+	freo := response["https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000"]
+	assert.Equal(t, "Fremantle Golf Course", freo.Name)
+	assert.Equal(t, "miclub", freo.WebsiteType)
+	assert.False(t, freo.Blacklisted)
+
+	springs := response["https://springs.quick18.com/teetimes/searchmatrix"]
+	assert.Equal(t, "The Springs Golf Course", springs.Name)
+	assert.Equal(t, "Quick18", springs.WebsiteType)
+	assert.False(t, springs.Blacklisted)
+}
+
+func TestOverwriteCoursesToFile(t *testing.T) {
+	cfgPath, restore := withTempConfigPath(t, ".config/TeeTimeFinder/config.txt")
+	defer restore()
+
+	require.True(t, CreateDir(), "CreateDir must succeed for test")
+
+	// Seed the file with junk so we can prove it gets truncated.
+	require.NoError(t, os.WriteFile(cfgPath, []byte("JUNK SHOULDN'T SURVIVE\n"), 0o644))
+
+	// Overwrite with these two exact courses
+	courses := []CourseInfo{
+		{
+			Name:        "Fremantle Golf Course",
+			URL:         "https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000",
+			WebsiteType: "miclub",
+			Blacklisted: false,
+		},
+		{
+			Name:        "The Springs Golf Course",
+			URL:         "https://springs.quick18.com/teetimes/searchmatrix",
+			WebsiteType: "Quick18",
+			Blacklisted: false,
+		},
+	}
+	require.NoError(t, overwriteCoursesToFile(courses), "overwriteCoursesToFile should truncate+write")
+
+	// Verify file content is exactly the two lines
+	gotBytes, err := os.ReadFile(cfgPath)
+	require.NoError(t, err, "expected config file to exist after overwrite")
+	expected := "" +
+		"Fremantle Golf Course,https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000,miclub,false\n" +
+		"The Springs Golf Course,https://springs.quick18.com/teetimes/searchmatrix,Quick18,false\n"
+	assert.Equal(t, expected, string(gotBytes), "file content should match expected lines exactly")
+
+	// Verify results
+	response := loadExistingCourses()
+	require.Len(t, response, 2, "expected two courses parsed after overwrite")
+
+	freo := response["https://fremantlepublic.miclub.com.au/guests/bookings/ViewPublicCalendar.msp?booking_resource_id=3000000"]
+	require.NotNil(t, freo)
+	assert.Equal(t, "Fremantle Golf Course", freo.Name)
+	assert.Equal(t, "miclub", freo.WebsiteType)
+	assert.False(t, freo.Blacklisted)
+
+	springs := response["https://springs.quick18.com/teetimes/searchmatrix"]
+	require.NotNil(t, springs)
+	assert.Equal(t, "The Springs Golf Course", springs.Name)
+	assert.Equal(t, "Quick18", springs.WebsiteType)
+	assert.False(t, springs.Blacklisted)
+}
