@@ -1,3 +1,8 @@
+// Copyright (c) 2024 Adam Wyatt
+//
+// This software is licensed under the MIT License.
+// See the LICENSE file in the root of the repository for details.
+
 package cmd
 
 import (
@@ -36,6 +41,12 @@ type startFormModel struct {
 	courses   []string
 	blacklist map[string]bool
 }
+
+// For releases
+var (
+	appName               = "TeeTimeFinder"
+	version, commit, date = "dev", "dev", "1970-01-01" // date gets overridden when built
+)
 
 var allowedStandardModifiers = map[string]bool{
 	"walking":  true,
@@ -84,6 +95,7 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.AddCommand(versionCmd(os.Stdout))
 	rootCmd.PersistentFlags().StringVarP(&specifiedTime, "time", "t", "", "Filter times within 1 hour before and after the specified time (e.g., 12:00)")
 	rootCmd.PersistentFlags().StringVarP(&specifiedDate, "date", "d", "", "Specify the date for the tee time search (format: DD-MM-YYYY)")
 	rootCmd.PersistentFlags().IntVarP(&specifiedSpots, "spots", "s", 0, "Filter timeslots based on available player spots (1-4)")

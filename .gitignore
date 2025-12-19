@@ -1,1 +1,4 @@
 TeeTimeFinder
+.vscode
+# Added by goreleaser init:
+dist/
