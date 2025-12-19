@@ -1,4 +1,4 @@
-module TeeTimeFinder
+module github.com/Ay1tsMe/TeeTimeFinder
 
 go 1.23.1
 

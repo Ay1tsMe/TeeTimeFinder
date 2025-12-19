@@ -24,9 +24,9 @@ builds:
       - darwin
     ldflags:
       - -s -w
-      - -X TeeTimeFinder/cmd.version={{ .Version }}
-      - -X TeeTimeFinder/cmd.commit={{ .Commit }}
-      - -X TeeTimeFinder/cmd.date={{ .Date }}
+      - -X github.com/Ay1tsMe/TeeTimeFinder/cmd.version={{ .Version }}
+      - -X github.com/Ay1tsMe/TeeTimeFinder/cmd.commit={{ .Commit }}
+      - -X github.com/Ay1tsMe/TeeTimeFinder/cmd.date={{ .Date }}
 
 archives:
   - formats: [tar.gz]

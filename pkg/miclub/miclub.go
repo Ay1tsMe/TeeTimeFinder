@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"TeeTimeFinder/pkg/shared"
+	"github.com/Ay1tsMe/TeeTimeFinder/pkg/shared"
 
 	"github.com/gocolly/colly"
 )

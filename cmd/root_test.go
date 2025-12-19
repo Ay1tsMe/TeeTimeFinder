@@ -6,11 +6,12 @@
 package cmd
 
 import (
-	"TeeTimeFinder/pkg/shared"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/Ay1tsMe/TeeTimeFinder/pkg/shared"
 
 	"github.com/stretchr/testify/assert"
 )

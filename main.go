@@ -5,7 +5,7 @@
 
 package main
 
-import "TeeTimeFinder/cmd"
+import "github.com/Ay1tsMe/TeeTimeFinder/cmd"
 
 func main() {
 	cmd.Execute()

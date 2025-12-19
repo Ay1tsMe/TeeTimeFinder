@@ -17,18 +17,26 @@ TeeTimeFinder aims to solve the problem of manually going through multiple cours
 - Interactive prompts and command-line flags 
 
 ## Installation
-Requires `go` to be installed.
 
+### Go
+```shell
+go install github.com/Ay1tsMe/TeeTimeFinder@latest
+```
+
+### Release Binary
+Download the latest release binary from the (Release Page)[https://github.com/Ay1tsMe/releases/latest] and extract it
+
+### Build from Source
 1. Clone the repo:
 
 ``` shell
-git clone https://github.com/Ay1tsMe/teetimefinder.git
+git clone https://github.com/Ay1tsMe/TeeTimeFinder.git
 ```
 
 2. Build from source:
 
 ``` shell
-cd teetimefinder
+cd TeeTimeFinder
 go build -o TeeTimeFinder
 ```
 
