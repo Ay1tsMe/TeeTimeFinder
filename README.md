@@ -24,7 +24,7 @@ go install github.com/Ay1tsMe/TeeTimeFinder@latest
 ```
 
 ### Release Binary
-Download the latest release binary from the (Release Page)[https://github.com/Ay1tsMe/releases/latest] and extract it
+Download the latest release binary from the [Release Page](https://github.com/Ay1tsMe/releases/latest) and extract it
 
 ### Build from Source
 1. Clone the repo:
