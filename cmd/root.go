@@ -6,9 +6,6 @@
 package cmd
 
 import (
-	"TeeTimeFinder/pkg/miclub"
-	"TeeTimeFinder/pkg/quick18"
-	"TeeTimeFinder/pkg/shared"
 	"bufio"
 	"fmt"
 	"log"
@@ -18,6 +15,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Ay1tsMe/TeeTimeFinder/pkg/miclub"
+	"github.com/Ay1tsMe/TeeTimeFinder/pkg/quick18"
+	"github.com/Ay1tsMe/TeeTimeFinder/pkg/shared"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"

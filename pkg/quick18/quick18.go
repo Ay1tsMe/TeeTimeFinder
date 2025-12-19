@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"TeeTimeFinder/pkg/shared"
+	"github.com/Ay1tsMe/TeeTimeFinder/pkg/shared"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly"
